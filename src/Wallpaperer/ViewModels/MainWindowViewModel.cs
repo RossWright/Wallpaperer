@@ -26,6 +26,8 @@ public partial class MainWindowViewModel : ObservableObject
     private string? _savedFilterId;
     private string? _selectionAnchor;
     private int _nextSpanGroup = 1;
+    private bool _loadingSettings = true;
+    private readonly DebouncedAction _autoApply = new(TimeSpan.FromMilliseconds(500));
     private IReadOnlyList<PictureItemViewModel> _allPictures = [];
 
     public MainWindowViewModel(
@@ -39,6 +41,8 @@ public partial class MainWindowViewModel : ObservableObject
         _thumbnails = thumbnails;
         _settings = settings;
         _savedFilterId = settings.SizeFilterId;
+        AutoApply = settings.AutoApply;
+        _loadingSettings = false;
         Monitors.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasMonitors));
     }
 
@@ -73,6 +77,9 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool isSettingWallpaper;
 
+    [ObservableProperty]
+    private bool autoApply;
+
     public event EventHandler? ApplyFinished;
 
     public async Task StartAsync(Screens screens)
@@ -91,6 +98,7 @@ public partial class MainWindowViewModel : ObservableObject
     public void Shutdown()
     {
         _shuttingDown = true;
+        _autoApply.Cancel();
         _scanCancellation?.Cancel();
         if (!IsSettingWallpaper)
             _applyCancellation?.Cancel();
@@ -134,7 +142,30 @@ public partial class MainWindowViewModel : ObservableObject
         ApplySelection(MonitorSelection.Fill(Devices(), [fromConnector, toConnector]));
     }
 
-    public async Task AssignAsync(MonitorViewModel monitor, string path)
+    public Task AssignSelectionAsync(string path)
+    {
+        var selected = Monitors.Where(item => item.IsSelected).ToList();
+        if (selected.Count == 0)
+        {
+            Status = "Select a monitor first.";
+            return Task.CompletedTask;
+        }
+
+        return AssignImageAsync(path, selected);
+    }
+
+    public Task AssignAsync(MonitorViewModel monitor, string path) =>
+        AssignImageAsync(path, DropTargets(Monitors, monitor));
+
+    internal static IReadOnlyList<MonitorViewModel> DropTargets(
+        IReadOnlyList<MonitorViewModel> monitors,
+        MonitorViewModel drop)
+    {
+        var selected = monitors.Where(monitor => monitor.IsSelected).ToList();
+        return selected.Contains(drop) ? selected : [drop];
+    }
+
+    private async Task AssignImageAsync(string path, IReadOnlyList<MonitorViewModel> targets)
     {
         if (!PictureLibrary.IsSupportedImage(path))
         {
@@ -148,19 +179,13 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        var selected = Monitors.Where(item => item.IsSelected).ToList();
-        var targets = selected.Count > 1 && selected.Contains(monitor)
-            ? (IReadOnlyList<MonitorViewModel>)selected
-            : [monitor];
-        if (targets.Count == 1)
-            SelectOnly(monitor.Device.Connector);
-
         await ApplyImageAsync(path, targets);
     }
 
     [RelayCommand(CanExecute = nameof(CanApply))]
     private async Task ApplyAsync()
     {
+        _autoApply.Cancel();
         _applyCancellation = new CancellationTokenSource();
         var cancellation = _applyCancellation.Token;
         IsApplying = true;
@@ -401,9 +426,56 @@ public partial class MainWindowViewModel : ObservableObject
             Status = $"Cleared {monitor.Device.Connector}.";
             if (path is not null)
                 _ = ReflowSpanAsync(remaining, path);
+            ScheduleAutoApply();
         }
 
         ApplyCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnAutoApplyChanged(bool value)
+    {
+        if (_loadingSettings)
+            return;
+
+        _settings.AutoApply = value;
+        _settings.Save();
+        if (!value)
+            _autoApply.Cancel();
+    }
+
+    private void ScheduleAutoApply()
+    {
+        if (!AutoApply || _shuttingDown)
+            return;
+
+        _autoApply.Schedule(ApplyIfReadyAsync);
+    }
+
+    private async Task ApplyIfReadyAsync()
+    {
+        while (IsApplying && !_shuttingDown)
+        {
+            var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnFinished(object? sender, EventArgs e)
+            {
+                ApplyFinished -= OnFinished;
+                finished.TrySetResult();
+            }
+
+            ApplyFinished += OnFinished;
+            if (!IsApplying)
+            {
+                ApplyFinished -= OnFinished;
+                break;
+            }
+
+            await finished.Task;
+        }
+
+        if (!AutoApply || _shuttingDown || !CanApply())
+            return;
+
+        await ApplyAsync();
     }
 
     private List<MonitorDevice> Devices() => Monitors.Select(monitor => monitor.Device).ToList();
@@ -465,6 +537,7 @@ public partial class MainWindowViewModel : ObservableObject
             ? $"Assigned {file} to {targets[0].Device.Connector}."
             : $"Assigned {file} across {Describe(targets)}.";
         ApplyCommand.NotifyCanExecuteChanged();
+        ScheduleAutoApply();
     }
 
     private List<(List<MonitorViewModel> Remaining, string Path)> CollectDisplaced(IReadOnlyList<MonitorViewModel> targets)

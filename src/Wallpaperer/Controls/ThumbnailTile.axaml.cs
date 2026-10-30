@@ -63,6 +63,7 @@ public partial class ThumbnailTile : UserControl
         _press = e;
         _origin = e.GetPosition(this);
         _dragging = false;
+        e.Pointer.Capture(this);
         e.Handled = true;
     }
 
@@ -83,6 +84,7 @@ public partial class ThumbnailTile : UserControl
         _dragging = true;
         var press = _press;
         _press = null;
+        e.Pointer.Capture(null);
         var transfer = new DataTransfer();
         transfer.Add(DataTransferItem.Create(PictureDrag.Format, _item.Path));
         try
@@ -99,5 +101,16 @@ public partial class ThumbnailTile : UserControl
         }
     }
 
-    private void OnPointerReleased(object? sender, PointerReleasedEventArgs e) => _press = null;
+    private async void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        var press = _press;
+        var item = _item;
+        _press = null;
+        e.Pointer.Capture(null);
+        if (press is null || _dragging || item is null || e.InitialPressMouseButton != MouseButton.Left)
+            return;
+
+        if (TopLevel.GetTopLevel(this)?.DataContext is MainWindowViewModel viewModel)
+            await viewModel.AssignSelectionAsync(item.Path);
+    }
 }

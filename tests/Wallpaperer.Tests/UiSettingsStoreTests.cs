@@ -19,6 +19,13 @@ public class UiSettingsStoreTests
 
             var loaded = UiSettingsStore.Load(path);
             Assert.Equal("3840x2160", loaded.SizeFilterId);
+            Assert.False(loaded.AutoApply);
+
+            loaded.AutoApply = true;
+            loaded.Save();
+            var again = UiSettingsStore.Load(path);
+            Assert.True(again.AutoApply);
+            Assert.Equal("3840x2160", again.SizeFilterId);
         }
         finally
         {

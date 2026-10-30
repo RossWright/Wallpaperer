@@ -15,7 +15,7 @@
       <Border Background="#334EA1FF"
               IsVisible="{Binding IsSelected}"
               IsHitTestVisible="False"/>
-      <TextBlock Text="Drop an image"
+      <TextBlock Text="Click or drop an image"
                  IsVisible="{Binding !HasImage}"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"

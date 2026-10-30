@@ -16,13 +16,21 @@
                  FontSize="22"
                  FontWeight="SemiBold"
                  VerticalAlignment="Center"/>
-      <Button Grid.Column="1"
-              Content="Apply"
-              Command="{Binding ApplyCommand}"
-              MinWidth="112"
-              Height="36"
-              HorizontalContentAlignment="Center"
-              VerticalContentAlignment="Center"/>
+      <StackPanel Grid.Column="1"
+                  Orientation="Horizontal"
+                  Spacing="14"
+                  VerticalAlignment="Center">
+        <CheckBox Content="Auto-apply"
+                  IsChecked="{Binding AutoApply, Mode=TwoWay}"
+                  VerticalAlignment="Center"
+                  ToolTip.Tip="Apply the desktop wallpaper about half a second after each change"/>
+        <Button Content="Apply"
+                Command="{Binding ApplyCommand}"
+                MinWidth="112"
+                Height="36"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"/>
+      </StackPanel>
     </Grid>
 
     <Border Grid.Row="1"

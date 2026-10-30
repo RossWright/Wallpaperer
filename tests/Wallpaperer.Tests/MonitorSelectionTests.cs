@@ -69,6 +69,22 @@ public class MonitorSelectionTests
     }
 
     [Fact]
+    public void A_drop_on_the_selection_uses_every_selected_monitor()
+    {
+        var monitors = Desk().Select(device => new MonitorViewModel(device, _ => { })).ToList();
+        foreach (var monitor in monitors.Where(monitor => monitor.Device.Connector != "HDMI-2"))
+            monitor.IsSelected = true;
+
+        var spanned = MainWindowViewModel.DropTargets(monitors, monitors.Single(monitor => monitor.Device.Connector == "DP-5"));
+        Assert.Equal(["DP-4", "DP-3", "DP-5"], spanned.Select(monitor => monitor.Device.Connector));
+
+        var outside = MainWindowViewModel.DropTargets(monitors, monitors[0]);
+        Assert.Equal("HDMI-2", Assert.Single(outside).Device.Connector);
+        Assert.True(monitors.Single(monitor => monitor.Device.Connector == "DP-4").IsSelected);
+        Assert.False(monitors[0].IsSelected);
+    }
+
+    [Fact]
     public void A_monitor_outside_the_box_stays_out()
     {
         var monitors = Desk().ToList();

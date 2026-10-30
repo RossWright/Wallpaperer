@@ -9,13 +9,16 @@ public sealed class UiSettingsStore
 
     private readonly string _path;
 
-    public UiSettingsStore(string path, string? sizeFilterId)
+    public UiSettingsStore(string path, string? sizeFilterId, bool autoApply = false)
     {
         _path = path;
         SizeFilterId = sizeFilterId;
+        AutoApply = autoApply;
     }
 
     public string? SizeFilterId { get; set; }
+
+    public bool AutoApply { get; set; }
 
     public static string DefaultPath()
     {
@@ -31,7 +34,7 @@ public sealed class UiSettingsStore
                 return new UiSettingsStore(path, null);
 
             var file = JsonSerializer.Deserialize<SettingsFile>(File.ReadAllText(path), JsonOptions);
-            return new UiSettingsStore(path, file?.SizeFilterId);
+            return new UiSettingsStore(path, file?.SizeFilterId, file?.AutoApply ?? false);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -47,7 +50,7 @@ public sealed class UiSettingsStore
             if (!string.IsNullOrEmpty(directory))
                 Directory.CreateDirectory(directory);
 
-            var json = JsonSerializer.Serialize(new SettingsFile(SizeFilterId), JsonOptions);
+            var json = JsonSerializer.Serialize(new SettingsFile(SizeFilterId, AutoApply), JsonOptions);
             File.WriteAllText(_path, json);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -56,5 +59,7 @@ public sealed class UiSettingsStore
         }
     }
 
-    private sealed record SettingsFile([property: JsonPropertyName("sizeFilterId")] string? SizeFilterId);
+    private sealed record SettingsFile(
+        [property: JsonPropertyName("sizeFilterId")] string? SizeFilterId,
+        [property: JsonPropertyName("autoApply")] bool AutoApply = false);
 }
