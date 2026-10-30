@@ -56,9 +56,9 @@
       "kind": "card",
       "parent": {
         "type": "stage",
-        "id": "doing"
+        "id": "done"
       },
-      "index": 10,
+      "index": 20,
       "summary": "Let change up the interaction model for this... dragging a picture to a monitor should still work, but we should also be able to select a monitor by clicking it and select a range by either mouse-down on a monitor and drag to another or ctrl or shift clicking monitors. Selects should always be all contiguous monitors, so no selecting the far left and far right in a 3 monitor spread - doing so selects all 3. Once selected any picture drop spans the selection. So the workflow to span a wallpaper across my bottom 3 would be to drag-click the bottom three, see that they are highlighted and then drag a spanned picture from the bottom up.",
       "tags": [],
       "isArchived": false
@@ -85,7 +85,7 @@
         "type": "stage",
         "id": "to-do"
       },
-      "index": 30,
+      "index": 10,
       "tags": [],
       "isArchived": false
     },
@@ -97,7 +97,7 @@
         "type": "stage",
         "id": "to-do"
       },
-      "index": 40,
+      "index": 20,
       "tags": [],
       "isArchived": false
     },
@@ -109,7 +109,7 @@
         "type": "stage",
         "id": "to-do"
       },
-      "index": 50,
+      "index": 30,
       "summary": "v1 only updates the desktop background. Also set the GNOME lock screen so the same spanned image shows there.",
       "tags": [
         "grok"
@@ -124,7 +124,7 @@
         "type": "stage",
         "id": "to-do"
       },
-      "index": 60,
+      "index": 40,
       "summary": "Rotate the spanned wallpaper on a timer. v1 applies one setup and leaves it in place.",
       "tags": [
         "grok"
@@ -139,7 +139,7 @@
         "type": "stage",
         "id": "to-do"
       },
-      "index": 70,
+      "index": 50,
       "summary": "Add a .desktop file and an installer so the app can be launched without dotnet run.",
       "tags": [
         "grok"
@@ -154,13 +154,26 @@
         "type": "stage",
         "id": "to-do"
       },
-      "index": 80,
+      "index": 60,
       "summary": "v1 ignores HEIC and HEIF. Show them in the thumbnail grid and use them when composing a wallpaper.",
       "tags": [
         "grok"
       ],
       "isArchived": false
+    },
+    {
+      "id": "00010",
+      "title": "select then click \u002B auto apply",
+      "kind": "card",
+      "parent": {
+        "type": "stage",
+        "id": "doing"
+      },
+      "index": 10,
+      "summary": "Change the interaction model again. The user should select one or more monitors as we\u0027ve established and then any picture they select fills the selected monitors - no drag and drop needed. If the user does mouse down on a pic and drag it to a monitor, it should set it on the span if the drop monitor is part of the selection, or just change that monitor if it is not - without resetting the selection. Also, add an auto-apply toggle by the apply button such that when a change is made there is like a 500ms debounce before the new selection is applied to the desktop",
+      "tags": [],
+      "isArchived": false
     }
   ],
-  "nextCardNumber": 10
+  "nextCardNumber": 11
 }

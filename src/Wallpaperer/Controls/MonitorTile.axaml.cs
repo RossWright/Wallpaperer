@@ -34,16 +34,16 @@ public partial class MonitorTile : UserControl
 
     private void OnMonitorPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MonitorViewModel.IsDropHot) or null)
+        if (e.PropertyName is nameof(MonitorViewModel.IsDropHot) or nameof(MonitorViewModel.IsSelected) or null)
             UpdateFrame();
     }
 
     private void UpdateFrame()
     {
-        if (_monitor?.IsDropHot == true)
+        if (_monitor is { IsDropHot: true } or { IsSelected: true })
         {
             Frame.BorderBrush = new SolidColorBrush(Color.Parse("#4EA1FF"));
-            Frame.BorderThickness = new Thickness(2);
+            Frame.BorderThickness = new Thickness(_monitor.IsDropHot ? 3 : 2);
         }
         else
         {

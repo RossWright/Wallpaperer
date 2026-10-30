@@ -16,10 +16,19 @@ public static class WallpaperComposer
     public static SKBitmap Render(
         IReadOnlyList<MonitorDevice> monitors,
         IReadOnlyDictionary<string, string> imagePaths,
+        CancellationToken cancellationToken) =>
+        Render(
+            monitors,
+            imagePaths.Select(pair => new ImagePlacement(pair.Value, [pair.Key])).ToList(),
+            cancellationToken);
+
+    public static SKBitmap Render(
+        IReadOnlyList<MonitorDevice> monitors,
+        IReadOnlyList<ImagePlacement> placements,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        foreach (var path in imagePaths.Values)
+        foreach (var path in placements.Select(placement => placement.Path).Distinct())
         {
             if (!File.Exists(path))
                 throw new WallpaperComposeException($"Could not read {path}.");
@@ -41,19 +50,24 @@ public static class WallpaperComposer
         {
             using var drawing = new SKCanvas(bitmap);
             drawing.Clear(SKColors.Black);
-            foreach (var rectangle in canvas.Rectangles)
+            var byConnector = canvas.Rectangles.ToDictionary(rectangle => rectangle.Connector);
+            foreach (var placement in placements)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (rectangle.Width <= 0 || rectangle.Height <= 0)
-                    continue;
-                if (!imagePaths.TryGetValue(rectangle.Connector, out var path))
+                var members = placement.Connectors
+                    .Distinct()
+                    .Select(connector => byConnector.TryGetValue(connector, out var rectangle) ? rectangle : null)
+                    .OfType<DestinationRect>()
+                    .Where(rectangle => rectangle.Width > 0 && rectangle.Height > 0)
+                    .ToList();
+                if (members.Count == 0)
                     continue;
 
-                using var source = OrientedBitmap.Decode(path, null);
+                using var source = OrientedBitmap.Decode(placement.Path, null);
                 if (source is null)
-                    throw new WallpaperComposeException($"Could not read {path}.");
+                    throw new WallpaperComposeException($"Could not read {placement.Path}.");
 
-                DrawCover(drawing, source, rectangle);
+                DrawPlacement(drawing, source, members);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -87,25 +101,22 @@ public static class WallpaperComposer
         return path;
     }
 
-    private static void DrawCover(SKCanvas canvas, SKBitmap source, DestinationRect destination)
+    private static void DrawPlacement(SKCanvas canvas, SKBitmap source, IReadOnlyList<DestinationRect> members)
     {
-        var cover = SpanLayout.Cover(
-            source.Width,
-            source.Height,
-            destination.Left,
-            destination.Top,
-            destination.Width,
-            destination.Height);
-
-        canvas.Save();
-        canvas.ClipRect(new SKRect(destination.Left, destination.Top, destination.Right, destination.Bottom));
+        var left = members.Min(rectangle => rectangle.Left);
+        var top = members.Min(rectangle => rectangle.Top);
+        var right = members.Max(rectangle => rectangle.Right);
+        var bottom = members.Max(rectangle => rectangle.Bottom);
+        var cover = SpanLayout.Cover(source.Width, source.Height, left, top, right - left, bottom - top);
         using var image = SKImage.FromBitmap(source);
         using var paint = new SKPaint { IsAntialias = true };
-        canvas.DrawImage(
-            image,
-            new SKRect(cover.X, cover.Y, cover.X + cover.ScaledWidth, cover.Y + cover.ScaledHeight),
-            new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear),
-            paint);
-        canvas.Restore();
+        var placed = new SKRect(cover.X, cover.Y, cover.X + cover.ScaledWidth, cover.Y + cover.ScaledHeight);
+        foreach (var member in members)
+        {
+            canvas.Save();
+            canvas.ClipRect(new SKRect(member.Left, member.Top, member.Right, member.Bottom));
+            canvas.DrawImage(image, placed, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear), paint);
+            canvas.Restore();
+        }
     }
 }

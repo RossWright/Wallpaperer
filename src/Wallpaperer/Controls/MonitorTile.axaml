@@ -12,6 +12,9 @@
           ClipToBounds="True">
     <Grid>
       <Image Source="{Binding Preview}" Stretch="UniformToFill"/>
+      <Border Background="#334EA1FF"
+              IsVisible="{Binding IsSelected}"
+              IsHitTestVisible="False"/>
       <TextBlock Text="Drop an image"
                  IsVisible="{Binding !HasImage}"
                  HorizontalAlignment="Center"

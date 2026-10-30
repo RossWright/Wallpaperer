@@ -71,6 +71,48 @@ public class WallpaperComposerTests
     }
 
     [Fact]
+    public void One_image_spans_the_union_and_leaves_the_gap_black()
+    {
+        var root = TempDirectory();
+        try
+        {
+            var stripes = WriteStripes(root);
+            var monitors = new[]
+            {
+                Device("A", 0, 0, 10, 10),
+                Device("B", 10, 0, 10, 10),
+                Device("C", 20, 0, 10, 10),
+            };
+
+            using var spanned = WallpaperComposer.Render(
+                monitors,
+                [new ImagePlacement(stripes, ["A", "B", "C"])],
+                CancellationToken.None);
+            AssertColor(SKColors.Red, spanned.GetPixel(5, 5));
+            AssertColor(SKColors.Green, spanned.GetPixel(15, 5));
+            AssertColor(SKColors.Blue, spanned.GetPixel(25, 5));
+
+            var split = new[]
+            {
+                Device("A", 0, 0, 10, 10),
+                Device("C", 20, 0, 10, 10),
+            };
+            using var gapped = WallpaperComposer.Render(
+                split,
+                [new ImagePlacement(stripes, ["A", "C"])],
+                CancellationToken.None);
+            Assert.Equal(30, gapped.Width);
+            AssertColor(SKColors.Red, gapped.GetPixel(5, 5));
+            AssertColor(SKColors.Black, gapped.GetPixel(15, 5));
+            AssertColor(SKColors.Blue, gapped.GetPixel(25, 5));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveJpeg_uses_the_span_timestamp_name()
     {
         var root = TempDirectory();
@@ -101,6 +143,24 @@ public class WallpaperComposerTests
 
     private static MonitorDevice Device(string connector, int x, int y, int width, int height) =>
         new(connector, connector, x, y, width, height, 1, false, width, height);
+
+    private static string WriteStripes(string directory)
+    {
+        var path = Path.Combine(directory, "stripes.png");
+        using var bitmap = new SKBitmap(30, 10);
+        for (var x = 0; x < bitmap.Width; x++)
+        {
+            var color = x < 10 ? SKColors.Red : x < 20 ? SKColors.Green : SKColors.Blue;
+            for (var y = 0; y < bitmap.Height; y++)
+                bitmap.SetPixel(x, y, color);
+        }
+
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        using var stream = File.Create(path);
+        data!.SaveTo(stream);
+        return path;
+    }
 
     private static string WriteSolid(string directory, string name, SKColor color, int width, int height)
     {

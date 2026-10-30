@@ -36,6 +36,11 @@ public partial class MonitorViewModel : ObservableObject
     private bool isDropHot;
 
     [ObservableProperty]
+    private bool isSelected;
+
+    public int? SpanGroupId { get; set; }
+
+    [ObservableProperty]
     private double viewX;
 
     [ObservableProperty]

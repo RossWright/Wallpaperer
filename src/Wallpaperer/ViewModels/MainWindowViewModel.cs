@@ -24,6 +24,8 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _scanning;
     private bool _hasPublished;
     private string? _savedFilterId;
+    private string? _selectionAnchor;
+    private int _nextSpanGroup = 1;
     private IReadOnlyList<PictureItemViewModel> _allPictures = [];
 
     public MainWindowViewModel(
@@ -109,6 +111,29 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    public void SelectOnly(string connector)
+    {
+        _selectionAnchor = connector;
+        ApplySelection(MonitorSelection.Fill(Devices(), [connector]));
+    }
+
+    public void ExtendSelection(string connector)
+    {
+        if (_selectionAnchor is null)
+        {
+            SelectOnly(connector);
+            return;
+        }
+
+        ApplySelection(MonitorSelection.Fill(Devices(), [_selectionAnchor, connector]));
+    }
+
+    public void SelectRange(string fromConnector, string toConnector)
+    {
+        _selectionAnchor = fromConnector;
+        ApplySelection(MonitorSelection.Fill(Devices(), [fromConnector, toConnector]));
+    }
+
     public async Task AssignAsync(MonitorViewModel monitor, string path)
     {
         if (!PictureLibrary.IsSupportedImage(path))
@@ -123,28 +148,14 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        var previewPath = await _thumbnails.GetJpegAsync(path, 1024, CancellationToken.None);
-        if (previewPath is null)
-        {
-            Status = $"Could not read {path}.";
-            return;
-        }
+        var selected = Monitors.Where(item => item.IsSelected).ToList();
+        var targets = selected.Count > 1 && selected.Contains(monitor)
+            ? (IReadOnlyList<MonitorViewModel>)selected
+            : [monitor];
+        if (targets.Count == 1)
+            SelectOnly(monitor.Device.Connector);
 
-        Bitmap bitmap;
-        try
-        {
-            await using var stream = File.OpenRead(previewPath);
-            bitmap = new Bitmap(stream);
-        }
-        catch (Exception)
-        {
-            Status = $"Could not read {path}.";
-            return;
-        }
-
-        monitor.AssignedPath = path;
-        monitor.SetPreview(bitmap);
-        Status = $"Assigned {Path.GetFileName(path)} to {monitor.Device.Connector}.";
+        await ApplyImageAsync(path, targets);
     }
 
     [RelayCommand(CanExecute = nameof(CanApply))]
@@ -157,14 +168,12 @@ public partial class MainWindowViewModel : ObservableObject
         {
             Status = "Composing wallpaper…";
             var devices = Monitors.Select(monitor => monitor.Device).ToList();
-            var images = Monitors
-                .Where(monitor => monitor.AssignedPath is not null)
-                .ToDictionary(monitor => monitor.Device.Connector, monitor => monitor.AssignedPath!);
+            var placements = Placements();
             var directory = WallpaperComposer.DefaultDirectory();
 
             var path = await Task.Run(() =>
             {
-                using var bitmap = WallpaperComposer.Render(devices, images, cancellation);
+                using var bitmap = WallpaperComposer.Render(devices, placements, cancellation);
                 cancellation.ThrowIfCancellationRequested();
                 return WallpaperComposer.SaveJpeg(bitmap, directory);
             }, cancellation);
@@ -234,11 +243,16 @@ public partial class MainWindowViewModel : ObservableObject
         foreach (var monitor in next)
             Monitors.Add(monitor);
 
+        var seeds = Monitors.Where(monitor => monitor.IsSelected).Select(monitor => monitor.Device.Connector).ToList();
+        if (seeds.Count > 0)
+            ApplySelection(MonitorSelection.Fill(devices, seeds));
+
         LayoutWarning = warning;
         if (devices.Count == 0)
             Status = "No monitors detected.";
 
         RefreshSizeFilters();
+        await RefreshSpanPreviewsAsync();
         ApplyCommand.NotifyCanExecuteChanged();
     }
 
@@ -372,8 +386,252 @@ public partial class MainWindowViewModel : ObservableObject
     private void OnMonitorChanged(MonitorViewModel monitor)
     {
         if (monitor.AssignedPath is null)
+        {
+            List<MonitorViewModel> remaining = [];
+            string? path = null;
+            if (monitor.SpanGroupId is int group)
+            {
+                remaining = Monitors
+                    .Where(item => item != monitor && item.SpanGroupId == group && item.AssignedPath is not null)
+                    .ToList();
+                path = remaining.FirstOrDefault()?.AssignedPath;
+                monitor.SpanGroupId = null;
+            }
+
             Status = $"Cleared {monitor.Device.Connector}.";
+            if (path is not null)
+                _ = ReflowSpanAsync(remaining, path);
+        }
 
         ApplyCommand.NotifyCanExecuteChanged();
+    }
+
+    private List<MonitorDevice> Devices() => Monitors.Select(monitor => monitor.Device).ToList();
+
+    private void ApplySelection(IReadOnlyList<string> connectors)
+    {
+        var selected = connectors.ToHashSet(StringComparer.Ordinal);
+        foreach (var monitor in Monitors)
+            monitor.IsSelected = selected.Contains(monitor.Device.Connector);
+    }
+
+    private List<ImagePlacement> Placements()
+    {
+        var placements = new List<ImagePlacement>();
+        var seen = new HashSet<int>();
+        foreach (var monitor in Monitors)
+        {
+            if (monitor.AssignedPath is null)
+                continue;
+
+            if (monitor.SpanGroupId is int group)
+            {
+                if (!seen.Add(group))
+                    continue;
+
+                var connectors = Monitors
+                    .Where(item => item.SpanGroupId == group && item.AssignedPath is not null)
+                    .Select(item => item.Device.Connector)
+                    .ToList();
+                placements.Add(new ImagePlacement(monitor.AssignedPath, connectors));
+            }
+            else
+            {
+                placements.Add(new ImagePlacement(monitor.AssignedPath, [monitor.Device.Connector]));
+            }
+        }
+
+        return placements;
+    }
+
+    private async Task ApplyImageAsync(string path, IReadOnlyList<MonitorViewModel> targets)
+    {
+        var previewPath = await _thumbnails.GetJpegAsync(path, 1024, CancellationToken.None);
+        if (previewPath is null)
+        {
+            Status = $"Could not read {path}.";
+            return;
+        }
+
+        var displaced = CollectDisplaced(targets);
+        if (!await PaintAsync(path, previewPath, targets, targets.Count > 1))
+            return;
+
+        foreach (var (remaining, oldPath) in displaced)
+            await ReflowSpanAsync(remaining, oldPath);
+
+        var file = Path.GetFileName(path);
+        Status = targets.Count == 1
+            ? $"Assigned {file} to {targets[0].Device.Connector}."
+            : $"Assigned {file} across {Describe(targets)}.";
+        ApplyCommand.NotifyCanExecuteChanged();
+    }
+
+    private List<(List<MonitorViewModel> Remaining, string Path)> CollectDisplaced(IReadOnlyList<MonitorViewModel> targets)
+    {
+        var targetSet = targets.ToHashSet();
+        var displaced = new List<(List<MonitorViewModel> Remaining, string Path)>();
+        var groups = targets
+            .Select(monitor => monitor.SpanGroupId)
+            .OfType<int>()
+            .Distinct();
+        foreach (var group in groups)
+        {
+            var members = Monitors.Where(monitor => monitor.SpanGroupId == group && monitor.AssignedPath is not null).ToList();
+            if (members.Count == 0 || members[0].AssignedPath is not string path)
+                continue;
+
+            var remaining = members.Where(monitor => !targetSet.Contains(monitor)).ToList();
+            if (remaining.Count > 0)
+                displaced.Add((remaining, path));
+        }
+
+        return displaced;
+    }
+
+    private async Task<bool> PaintAsync(
+        string path,
+        string previewPath,
+        IReadOnlyList<MonitorViewModel> targets,
+        bool span)
+    {
+        if (!span)
+        {
+            var bitmap = OpenBitmap(previewPath);
+            if (bitmap is null)
+            {
+                Status = $"Could not read {path}.";
+                return false;
+            }
+
+            targets[0].SpanGroupId = null;
+            targets[0].AssignedPath = path;
+            targets[0].SetPreview(bitmap);
+            return true;
+        }
+
+        var connectors = targets.Select(monitor => monitor.Device.Connector).ToList();
+        var devices = Devices();
+        var pngs = await Task.Run(() => SpanPreview.PngSlices(previewPath, devices, connectors));
+        if (pngs is null)
+        {
+            Status = $"Could not read {path}.";
+            return false;
+        }
+
+        var bitmaps = pngs.Select(OpenPng).ToList();
+        if (bitmaps.Any(bitmap => bitmap is null))
+        {
+            foreach (var bitmap in bitmaps)
+                bitmap?.Dispose();
+            Status = $"Could not read {path}.";
+            return false;
+        }
+
+        var group = _nextSpanGroup++;
+        for (var index = 0; index < targets.Count; index++)
+        {
+            targets[index].SpanGroupId = group;
+            targets[index].AssignedPath = path;
+            targets[index].SetPreview(bitmaps[index]);
+        }
+
+        return true;
+    }
+
+    private async Task ReflowSpanAsync(List<MonitorViewModel> members, string path)
+    {
+        if (members.Count == 0)
+            return;
+
+        var previewPath = await _thumbnails.GetJpegAsync(path, 1024, CancellationToken.None);
+        if (previewPath is null)
+            return;
+
+        if (members.Count == 1)
+        {
+            var bitmap = OpenBitmap(previewPath);
+            if (bitmap is null)
+                return;
+
+            members[0].SpanGroupId = null;
+            members[0].SetPreview(bitmap);
+            return;
+        }
+
+        var connectors = members.Select(monitor => monitor.Device.Connector).ToList();
+        var devices = Devices();
+        var pngs = await Task.Run(() => SpanPreview.PngSlices(previewPath, devices, connectors));
+        if (pngs is null)
+            return;
+
+        var bitmaps = pngs.Select(OpenPng).ToList();
+        if (bitmaps.Any(bitmap => bitmap is null))
+        {
+            foreach (var bitmap in bitmaps)
+                bitmap?.Dispose();
+            return;
+        }
+
+        for (var index = 0; index < members.Count; index++)
+            members[index].SetPreview(bitmaps[index]);
+    }
+
+    private async Task RefreshSpanPreviewsAsync()
+    {
+        var groups = Monitors
+            .Where(monitor => monitor.SpanGroupId is not null && monitor.AssignedPath is not null)
+            .GroupBy(monitor => monitor.SpanGroupId!.Value)
+            .ToList();
+        foreach (var group in groups)
+        {
+            var members = group.ToList();
+            var path = members[0].AssignedPath;
+            if (path is not null)
+                await ReflowSpanAsync(members, path);
+        }
+    }
+
+    private static string Describe(IReadOnlyList<MonitorViewModel> targets)
+    {
+        var names = targets
+            .OrderBy(monitor => monitor.Device.Y)
+            .ThenBy(monitor => monitor.Device.X)
+            .Select(monitor => monitor.Device.Connector)
+            .ToList();
+        if (names.Count < 2)
+            return names.FirstOrDefault() ?? "";
+        if (names.Count == 2)
+            return $"{names[0]} and {names[1]}";
+
+        return string.Join(", ", names.Take(names.Count - 1)) + ", and " + names[^1];
+    }
+
+    private static Bitmap? OpenBitmap(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return new Bitmap(stream);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static Bitmap? OpenPng(byte[]? png)
+    {
+        if (png is null)
+            return null;
+
+        try
+        {
+            return new Bitmap(new MemoryStream(png));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }
