@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Wallpaperer.ViewModels"
+             x:Class="Wallpaperer.Controls.MonitorTile"
+             x:DataType="vm:MonitorViewModel"
+             x:Name="Root">
+  <Border x:Name="Frame"
+          Background="#1B1E24"
+          BorderBrush="#6A7382"
+          BorderThickness="1"
+          CornerRadius="6"
+          ClipToBounds="True">
+    <Grid>
+      <Image Source="{Binding Preview}" Stretch="UniformToFill"/>
+      <TextBlock Text="Drop an image"
+                 IsVisible="{Binding !HasImage}"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"
+                 Foreground="#C5CAD3"
+                 FontSize="13"
+                 TextAlignment="Center"
+                 Margin="8"/>
+      <Border VerticalAlignment="Bottom" Background="#CC101218" Padding="8,5">
+        <StackPanel Spacing="1">
+          <TextBlock Text="{Binding Title}"
+                     Foreground="White"
+                     FontSize="12"
+                     TextTrimming="CharacterEllipsis"/>
+          <TextBlock Text="{Binding Detail}"
+                     Foreground="#D5DAE3"
+                     FontSize="11"
+                     TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+      </Border>
+      <Button Content="Clear"
+              Command="{Binding ClearCommand}"
+              IsVisible="{Binding HasImage}"
+              HorizontalAlignment="Right"
+              VerticalAlignment="Top"
+              Margin="6"
+              Padding="8,2"
+              MinHeight="0"
+              FontSize="12"/>
+    </Grid>
+  </Border>
+</UserControl>

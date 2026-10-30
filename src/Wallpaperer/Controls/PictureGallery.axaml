@@ -1,0 +1,48 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Wallpaperer.Controls"
+             x:Class="Wallpaperer.Controls.PictureGallery">
+  <ListBox x:Name="List"
+           Background="Transparent"
+           BorderThickness="0"
+           Padding="0"
+           Focusable="False"
+           ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+    <ListBox.ItemsPanel>
+      <ItemsPanelTemplate>
+        <VirtualizingStackPanel/>
+      </ItemsPanelTemplate>
+    </ListBox.ItemsPanel>
+    <ListBox.Styles>
+      <Style Selector="ListBoxItem">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Margin" Value="0,0,0,8"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="FocusAdorner" Value="{x:Null}"/>
+      </Style>
+      <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent"/>
+      </Style>
+      <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent"/>
+      </Style>
+    </ListBox.Styles>
+    <ListBox.ItemTemplate>
+      <DataTemplate x:DataType="controls:PictureRow">
+        <ItemsControl ItemsSource="{Binding Items}" Height="120">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <controls:ThumbnailTile Width="120" Height="120" Margin="0,0,8,0"/>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </DataTemplate>
+    </ListBox.ItemTemplate>
+  </ListBox>
+</UserControl>

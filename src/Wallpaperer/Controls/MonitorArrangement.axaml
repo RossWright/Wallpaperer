@@ -1,0 +1,14 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Wallpaperer.ViewModels"
+             x:Class="Wallpaperer.Controls.MonitorArrangement"
+             x:DataType="vm:MainWindowViewModel">
+  <Grid>
+    <Canvas x:Name="Surface"/>
+    <TextBlock Text="No monitors detected."
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center"
+               Foreground="#C5CAD3"
+               IsVisible="{Binding !HasMonitors}"/>
+  </Grid>
+</UserControl>

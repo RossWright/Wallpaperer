@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Wallpaperer.Controls"
+        xmlns:vm="using:Wallpaperer.ViewModels"
+        x:Class="Wallpaperer.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Wallpaperer"
+        Width="1100"
+        Height="800"
+        MinWidth="860"
+        MinHeight="640"
+        WindowStartupLocation="CenterScreen">
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="20,16,20,8">
+      <TextBlock Text="Wallpaperer"
+                 FontSize="22"
+                 FontWeight="SemiBold"
+                 VerticalAlignment="Center"/>
+      <Button Grid.Column="1"
+              Content="Apply"
+              Command="{Binding ApplyCommand}"
+              MinWidth="112"
+              Height="36"
+              HorizontalContentAlignment="Center"
+              VerticalContentAlignment="Center"/>
+    </Grid>
+
+    <Border Grid.Row="1"
+            Height="280"
+            Margin="20,4,20,8"
+            CornerRadius="12"
+            Background="#14161B"
+            BorderBrush="#3A4150"
+            BorderThickness="1"
+            ClipToBounds="True">
+      <controls:MonitorArrangement/>
+    </Border>
+
+    <Border Grid.Row="2"
+            Margin="20,0,20,8"
+            CornerRadius="12"
+            BorderThickness="1"
+            BorderBrush="#66808080"
+            Padding="8">
+      <Grid RowDefinitions="Auto,*">
+        <ComboBox Grid.Row="0"
+                  ItemsSource="{Binding SizeFilters}"
+                  SelectedItem="{Binding SelectedSizeFilter, Mode=TwoWay}"
+                  HorizontalAlignment="Left"
+                  MinWidth="280"
+                  MaxWidth="460"
+                  Margin="0,0,0,8"
+                  ToolTip.Tip="Pictures within 12% of this resolution"/>
+        <controls:PictureGallery Grid.Row="1"/>
+      </Grid>
+    </Border>
+
+    <StackPanel Grid.Row="3" Margin="20,4,20,14" Spacing="2">
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding LayoutWarning}"
+                 TextWrapping="Wrap"
+                 Foreground="#E0A040"
+                 IsVisible="{Binding HasLayoutWarning}"/>
+    </StackPanel>
+  </Grid>
+</Window>

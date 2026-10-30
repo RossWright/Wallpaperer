@@ -1,0 +1,166 @@
+{
+  "comment": {
+    "whatThisIs": "Dodalu board live state for this project. Dodalu owns this file and renders the kanban board from it.",
+    "howDodaluUsesIt": "Dodalu reads stages, cards, tags, and board appearance from this JSON file, watches it for changes, and may rewrite it to keep the schema comment and required defaults current.",
+    "cardStorage": "Cards live in the top-level cards array. Each item is a card or a bucket with exactly one parent (a stage or a bucket). New items need a unique numeric id (00001), title, kind, parent, and order among siblings. Cards may have summary and backingDoc. Buckets contain cards (never buckets). Optional tags[] references tags[].id. Optional isArchived hides the item from normal stages (soft-archive). nextCardNumber advances with each create. features.useCardArchive controls whether remove soft-archives or permanently deletes.",
+    "cardRecordFields": {
+      "id": "Stable numeric card id, zero-padded to at least 5 digits (00001), assigned from nextCardNumber.",
+      "title": "Short card title shown on the board (max 80 characters).",
+      "kind": "card (work item with summary/spec) or bucket (container that holds cards).",
+      "parent": "Exactly one parent: { type: stage, id } or { type: bucket, id }. Buckets parent only to stages. Cards in a bucket do not store a stage.",
+      "index": "Sort order among siblings that share the same parent. Lower numbers appear earlier.",
+      "summary": "Optional summary (Markdown supported). The board card face shows a truncated rendered preview (summaryDisplayLength). Unused on buckets.",
+      "tags": "Optional list of tag ids from tags[].id shown as chips on the card.",
+      "backingDoc": "Canonical versioned Markdown backing document, usually docs/dodalu/cards/\u003Ccard-id\u003E.md. Unused on buckets.",
+      "isArchived": "When true, the card is soft-archived: hidden from normal stages and shown only in Archived.",
+      "archivedAtUtc": "UTC timestamp set when the card was soft-archived; cleared on restore. Archived sorts newest first.",
+      "attachments": "Optional list of project-relative file/folder paths. In-project drops are links; outside-project drops/pastes are copied under docs/dodalu/cards/\u003Ccard-id\u003E/. Each entry has path, optional source (paste|drop|browse|link), optional addedUtc, and optional showOnFace (images only; at most one per card). Unused on buckets."
+    }
+  },
+  "schemaVersion": 7,
+  "projectId": "a80a3be0526342c68c5011099ccffe0a",
+  "displayName": "Wallpaperer",
+  "createdUtc": "2026-10-30T13:49:53.1428445+00:00",
+  "specDocumentsDirectory": "docs/dodalu/cards",
+  "useCardArchive": false,
+  "useEffort": false,
+  "allowMcpEffortWrites": false,
+  "effortSuffix": "pts",
+  "stages": [
+    {
+      "id": "to-do",
+      "title": "To Do",
+      "index": 10
+    },
+    {
+      "id": "doing",
+      "title": "Doing",
+      "index": 20
+    },
+    {
+      "id": "done",
+      "title": "Done",
+      "index": 30
+    }
+  ],
+  "tags": [
+    {
+      "id": "grok",
+      "title": "Grok"
+    }
+  ],
+  "cards": [
+    {
+      "id": "00001",
+      "title": "Span Wallpaper across adjactent monitors",
+      "kind": "card",
+      "parent": {
+        "type": "stage",
+        "id": "doing"
+      },
+      "index": 10,
+      "summary": "Let change up the interaction model for this... dragging a picture to a monitor should still work, but we should also be able to select a monitor by clicking it and select a range by either mouse-down on a monitor and drag to another or ctrl or shift clicking monitors. Selects should always be all contiguous monitors, so no selecting the far left and far right in a 3 monitor spread - doing so selects all 3. Once selected any picture drop spans the selection. So the workflow to span a wallpaper across my bottom 3 would be to drag-click the bottom three, see that they are highlighted and then drag a spanned picture from the bottom up.",
+      "tags": [],
+      "isArchived": false
+    },
+    {
+      "id": "00002",
+      "title": "Filter wallpapers by size (default to monitor sizes)",
+      "kind": "card",
+      "parent": {
+        "type": "stage",
+        "id": "done"
+      },
+      "index": 10,
+      "summary": "Add a dropdown to the top of the found picture tiles. It should have \u0022Any\u0022 and then an entry for all the popular screen resolutions. It should include entries for spanning resolutions relevant to the current monitor setup (so I\u0027d see entries for 2-monitor spans veritically and horizontally and 3 monitor-spans horizontally). Each entry corresponds to a range of resolutions and changing the dropdown filters the list to pictures in that range. The setting on the filter should be persisted between sessions.",
+      "tags": [],
+      "backingDoc": "docs/dodalu/cards/00002.md",
+      "isArchived": false
+    },
+    {
+      "id": "00004",
+      "title": "Set Wallpaper fit/zoom/stretch per monitor",
+      "kind": "card",
+      "parent": {
+        "type": "stage",
+        "id": "to-do"
+      },
+      "index": 30,
+      "tags": [],
+      "isArchived": false
+    },
+    {
+      "id": "00005",
+      "title": "Set background color/tile/image (layer wallpapers)",
+      "kind": "card",
+      "parent": {
+        "type": "stage",
+        "id": "to-do"
+      },
+      "index": 40,
+      "tags": [],
+      "isArchived": false
+    },
+    {
+      "id": "00006",
+      "title": "Set the lock screen to the spanned wallpaper",
+      "kind": "card",
+      "parent": {
+        "type": "stage",
+        "id": "to-do"
+      },
+      "index": 50,
+      "summary": "v1 only updates the desktop background. Also set the GNOME lock screen so the same spanned image shows there.",
+      "tags": [
+        "grok"
+      ],
+      "isArchived": false
+    },
+    {
+      "id": "00007",
+      "title": "Slideshow through wallpaper setups",
+      "kind": "card",
+      "parent": {
+        "type": "stage",
+        "id": "to-do"
+      },
+      "index": 60,
+      "summary": "Rotate the spanned wallpaper on a timer. v1 applies one setup and leaves it in place.",
+      "tags": [
+        "grok"
+      ],
+      "isArchived": false
+    },
+    {
+      "id": "00008",
+      "title": "Install Wallpaperer as a desktop app",
+      "kind": "card",
+      "parent": {
+        "type": "stage",
+        "id": "to-do"
+      },
+      "index": 70,
+      "summary": "Add a .desktop file and an installer so the app can be launched without dotnet run.",
+      "tags": [
+        "grok"
+      ],
+      "isArchived": false
+    },
+    {
+      "id": "00009",
+      "title": "Include HEIC photos in the library",
+      "kind": "card",
+      "parent": {
+        "type": "stage",
+        "id": "to-do"
+      },
+      "index": 80,
+      "summary": "v1 ignores HEIC and HEIF. Show them in the thumbnail grid and use them when composing a wallpaper.",
+      "tags": [
+        "grok"
+      ],
+      "isArchived": false
+    }
+  ],
+  "nextCardNumber": 10
+}

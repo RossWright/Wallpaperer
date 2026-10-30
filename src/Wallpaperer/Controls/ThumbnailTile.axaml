@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Wallpaperer.ViewModels"
+             x:Class="Wallpaperer.Controls.ThumbnailTile"
+             x:DataType="vm:PictureItemViewModel"
+             ToolTip.Tip="{Binding Tooltip}"
+             Cursor="Hand">
+  <Border Background="#2A2E36"
+          BorderBrush="#55606878"
+          BorderThickness="1"
+          CornerRadius="8"
+          ClipToBounds="True">
+    <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>
+  </Border>
+</UserControl>

@@ -1,0 +1,53 @@
+---
+description: Dodalu MCP board guidance
+alwaysApply: true
+---
+
+<!-- dodalu:mcp-begin -->
+## Dodalu MCP
+
+Use the Dodalu MCP server for board operations in this project.
+
+- Always pass `projectRoot` as the absolute path to this repository root.
+- Board mutations go only through Dodalu MCP tools (`dodalu_*`) or the Dodalu
+  desktop app. Do not hand-edit `dodalu.json`. Do not call Dodalu Core
+  / store / handlers, scripts, or other APIs that write board JSON outside MCP.
+- If Dodalu MCP is missing, disconnected, authenticating, or failing: stop and
+  tell the user. Do not invent a workaround that writes board state another way.
+- Card backing docs live under `docs/dodalu/cards/` (or the path on each card).
+- Discover open Dodalu windows with `dodalu_list_open_projects` when helpful.
+- Locate a project from a nested path with `dodalu_find_project`.
+- Cards include `tags` (tag ids). List the catalog with `dodalu_list_tags`.
+- Assign tags via `dodalu_create_card` / `dodalu_update_card` using `tags`,
+  `addTags`, or `removeTags`. Values may be tag ids or titles; unknown titles
+  create project tags with an unused color.
+- Users may paste card references like `#00042` (zero-padded 5-digit board card
+  ids shown on each card; click the number or use Copy reference). Resolve
+  `#id` via `dodalu_list_cards` / `dodalu_get_board` and operate on that card.
+  Create does not accept a client-chosen id.
+- When a user says they want to work on a card (e.g. "work on #00042 next"),
+  read the board stage titles and infer a sensible workflow progression
+  (examples: To Do / Backlog → Doing / In Progress → Review / Test → Done).
+  If there is an in-progress style stage, move the card there with
+  `dodalu_move_card` unless the user asks otherwise. Prefer stage *titles*
+  over ids when judging intent.
+- A bucket groups cards one level deep (`stage → bucket → card`). Create with
+  `kind` `bucket` (parent/stage must be a stage). Create cards inside a bucket with
+  `parent: { type: "bucket", id }`. List children with `dodalu_list_cards` `parent`,
+  or use `includeContained` with a stage. Move with `dodalu_move_card` `parent` or
+  `stage` (never both). Group existing cards with `dodalu_put_cards_in_bucket`.
+  Remove a bucket with `dodalu_delete_bucket` (`disposition`: move/archive/delete).
+  Do not nest buckets.
+- Effort/work (`dodalu.work.json`) is optional per board (`features.useEffort`).
+  Never invent estimates or work entries. Read with `dodalu_get_card_effort`.
+  Mutations (`dodalu_set_card_initial_estimate`, `dodalu_add_work_entry`,
+  `dodalu_update_work_entry`, `dodalu_delete_work_entry`) require the board's
+  `allowMcpEffortWrites` switch (default off) **and** an explicit user request.
+- Cards may include `attachments` (project-relative paths). List with
+  `dodalu_list_card_attachments`. Link existing project files with
+  `dodalu_add_card_attachment` (no copy/delete). Remove links with
+  `dodalu_remove_card_attachment` (manifest only; does not delete files).
+  Reject phantom paths on add; missing files show as broken in the UI.
+
+Guidance version: 12
+<!-- dodalu:mcp-end -->
