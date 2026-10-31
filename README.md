@@ -21,7 +21,7 @@ Create a [GitHub Release](https://github.com/RossWright/Wallpaperer/releases) an
 
 ## Site
 
-`docs/` is the GitHub Pages site. In the repository settings, set Pages to deploy from the `master` branch folder `/docs`. Drop screenshots in `docs/screenshots/` and add them to `docs/index.html`.
+`docs/` is the GitHub Pages site. Pages deploys from the `main` branch folder `/docs`. Drop screenshots in `docs/screenshots/` and add them to `docs/index.html`.
 
 ## Layout
 
