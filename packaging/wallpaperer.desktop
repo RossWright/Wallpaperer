@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.1
+Name=Wallpaperer
+GenericName=Wallpaper Setter
+Comment=Arrange pictures across monitors and apply a spanned wallpaper
+Exec=wallpaperer
+TryExec=wallpaperer
+Icon=wallpaperer
+Terminal=false
+Categories=Graphics;
+Keywords=wallpaper;background;monitor;
+StartupNotify=true

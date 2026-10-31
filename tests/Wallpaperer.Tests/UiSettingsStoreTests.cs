@@ -26,6 +26,11 @@ public class UiSettingsStoreTests
             var again = UiSettingsStore.Load(path);
             Assert.True(again.AutoApply);
             Assert.Equal("3840x2160", again.SizeFilterId);
+
+            File.WriteAllText(path, """{ "sizeFilterId": "1920x1080", "sameLockScreen": false }""");
+            var olderFile = UiSettingsStore.Load(path);
+            Assert.Equal("1920x1080", olderFile.SizeFilterId);
+            Assert.False(olderFile.AutoApply);
         }
         finally
         {

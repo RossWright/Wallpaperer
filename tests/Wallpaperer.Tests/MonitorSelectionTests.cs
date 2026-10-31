@@ -47,7 +47,8 @@ public class MonitorSelectionTests
                 new MutterMonitorLayoutSource(new IdleProcessRunner()),
                 new GnomeWallpaperApplier(new IdleProcessRunner()),
                 new ThumbnailCache(directory),
-                new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null));
+                new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null),
+                EmptyCurrentWallpaperSource.Instance);
             foreach (var device in Desk())
                 viewModel.Monitors.Add(new MonitorViewModel(device, _ => { }));
 
@@ -82,6 +83,33 @@ public class MonitorSelectionTests
         Assert.Equal("HDMI-2", Assert.Single(outside).Device.Connector);
         Assert.True(monitors.Single(monitor => monitor.Device.Connector == "DP-4").IsSelected);
         Assert.False(monitors[0].IsSelected);
+    }
+
+    [Fact]
+    public void Auto_apply_disables_the_apply_command()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "wallpaperer-tests", Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var viewModel = new MainWindowViewModel(
+                new MutterMonitorLayoutSource(new IdleProcessRunner()),
+                new GnomeWallpaperApplier(new IdleProcessRunner()),
+                new ThumbnailCache(directory),
+                new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null),
+                EmptyCurrentWallpaperSource.Instance);
+            var monitor = new MonitorViewModel(new MonitorDevice("DP-3", "DP-3", 0, 0, 100, 100, 1, true, 100, 100), _ => { });
+            viewModel.Monitors.Add(monitor);
+            monitor.AssignedPath = Path.Combine(directory, "missing.jpg");
+
+            Assert.True(viewModel.ApplyCommand.CanExecute(null));
+            viewModel.AutoApply = true;
+            Assert.False(viewModel.ApplyCommand.CanExecute(null));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]

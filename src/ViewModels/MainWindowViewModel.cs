@@ -16,6 +16,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly GnomeWallpaperApplier _applier;
     private readonly ThumbnailCache _thumbnails;
     private readonly UiSettingsStore _settings;
+    private readonly ICurrentWallpaperSource _wallpapers;
     private CancellationTokenSource? _scanCancellation;
     private CancellationTokenSource? _applyCancellation;
     private int _layoutGeneration;
@@ -28,18 +29,22 @@ public partial class MainWindowViewModel : ObservableObject
     private int _nextSpanGroup = 1;
     private bool _loadingSettings = true;
     private readonly DebouncedAction _autoApply = new(TimeSpan.FromMilliseconds(500));
+    private bool _shownCurrentWallpaper;
+    private bool _showingCurrentWallpaper;
     private IReadOnlyList<PictureItemViewModel> _allPictures = [];
 
     public MainWindowViewModel(
         MutterMonitorLayoutSource monitors,
         GnomeWallpaperApplier applier,
         ThumbnailCache thumbnails,
-        UiSettingsStore settings)
+        UiSettingsStore settings,
+        ICurrentWallpaperSource wallpapers)
     {
         _monitors = monitors;
         _applier = applier;
         _thumbnails = thumbnails;
         _settings = settings;
+        _wallpapers = wallpapers;
         _savedFilterId = settings.SizeFilterId;
         AutoApply = settings.AutoApply;
         _loadingSettings = false;
@@ -78,6 +83,7 @@ public partial class MainWindowViewModel : ObservableObject
     private bool isSettingWallpaper;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ApplyCommand))]
     private bool autoApply;
 
     public event EventHandler? ApplyFinished;
@@ -224,7 +230,9 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private bool CanApply() => !IsApplying && Monitors.Any(monitor => monitor.HasImage);
+    private bool HasAssignment() => Monitors.Any(monitor => monitor.HasImage);
+
+    private bool CanApply() => !AutoApply && !IsApplying && HasAssignment();
 
     private async Task LoadMonitorsAsync(Screens? screens, int generation)
     {
@@ -278,6 +286,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         RefreshSizeFilters();
         await RefreshSpanPreviewsAsync();
+        await ShowCurrentWallpapersAsync();
         ApplyCommand.NotifyCanExecuteChanged();
     }
 
@@ -441,11 +450,13 @@ public partial class MainWindowViewModel : ObservableObject
         _settings.Save();
         if (!value)
             _autoApply.Cancel();
+        else
+            _ = ApplyIfReadyAsync();
     }
 
     private void ScheduleAutoApply()
     {
-        if (!AutoApply || _shuttingDown)
+        if (!AutoApply || _shuttingDown || _showingCurrentWallpaper)
             return;
 
         _autoApply.Schedule(ApplyIfReadyAsync);
@@ -472,7 +483,7 @@ public partial class MainWindowViewModel : ObservableObject
             await finished.Task;
         }
 
-        if (!AutoApply || _shuttingDown || !CanApply())
+        if (!AutoApply || _shuttingDown || !HasAssignment())
             return;
 
         await ApplyAsync();
@@ -516,12 +527,13 @@ public partial class MainWindowViewModel : ObservableObject
         return placements;
     }
 
-    private async Task ApplyImageAsync(string path, IReadOnlyList<MonitorViewModel> targets)
+    private async Task ApplyImageAsync(string path, IReadOnlyList<MonitorViewModel> targets, bool announce = true)
     {
         var previewPath = await _thumbnails.GetJpegAsync(path, 1024, CancellationToken.None);
         if (previewPath is null)
         {
-            Status = $"Could not read {path}.";
+            if (announce)
+                Status = $"Could not read {path}.";
             return;
         }
 
@@ -532,12 +544,61 @@ public partial class MainWindowViewModel : ObservableObject
         foreach (var (remaining, oldPath) in displaced)
             await ReflowSpanAsync(remaining, oldPath);
 
-        var file = Path.GetFileName(path);
-        Status = targets.Count == 1
-            ? $"Assigned {file} to {targets[0].Device.Connector}."
-            : $"Assigned {file} across {Describe(targets)}.";
+        if (announce)
+        {
+            var file = Path.GetFileName(path);
+            Status = targets.Count == 1
+                ? $"Assigned {file} to {targets[0].Device.Connector}."
+                : $"Assigned {file} across {Describe(targets)}.";
+            ScheduleAutoApply();
+        }
+
         ApplyCommand.NotifyCanExecuteChanged();
-        ScheduleAutoApply();
+    }
+
+    private async Task ShowCurrentWallpapersAsync()
+    {
+        if (_shownCurrentWallpaper || _shuttingDown || Monitors.Count == 0)
+            return;
+
+        _shownCurrentWallpaper = true;
+        CurrentWallpapers current;
+        try
+        {
+            current = await _wallpapers.ReadAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            Trace.WriteLine("Could not read the current wallpaper: " + exception.Message);
+            return;
+        }
+
+        _showingCurrentWallpaper = true;
+        try
+        {
+            if (current.Desktop.Path is string desktop && File.Exists(desktop))
+                await ShowPictureAsync(current.Desktop);
+        }
+        finally
+        {
+            _showingCurrentWallpaper = false;
+        }
+    }
+
+    private async Task ShowPictureAsync(WallpaperPicture picture)
+    {
+        if (picture.Path is null)
+            return;
+
+        var monitors = Monitors.ToList();
+        if (picture.ShowsAsOneSpan(monitors.Count))
+        {
+            await ApplyImageAsync(picture.Path, monitors, announce: false);
+            return;
+        }
+
+        foreach (var monitor in monitors)
+            await ApplyImageAsync(picture.Path, [monitor], announce: false);
     }
 
     private List<(List<MonitorViewModel> Remaining, string Path)> CollectDisplaced(IReadOnlyList<MonitorViewModel> targets)

@@ -78,6 +78,7 @@ public partial class MonitorViewModel : ObservableObject
     {
         _suppressChange = true;
         AssignedPath = null;
+        SpanGroupId = null;
         SetPreview(null);
         _suppressChange = false;
     }

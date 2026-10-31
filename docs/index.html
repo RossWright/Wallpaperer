@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wallpaperer</title>
+  <link rel="icon" href="wallpaperer.png">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #12161e;
+      --ink: #f4f7fb;
+      --muted: #b7c0ce;
+      --line: #2c3544;
+      --accent: #4ea1ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 18px/1.5 "Segoe UI", system-ui, sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 64px 24px 80px; }
+    img.logo { width: 128px; height: 128px; border-radius: 28px; }
+    h1 { font-size: 42px; line-height: 1.1; margin: 24px 0 12px; }
+    .lead { color: var(--muted); font-size: 20px; margin: 0 0 32px; }
+    a { color: var(--accent); }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 40px; }
+    .actions a {
+      color: var(--ink);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 10px 16px;
+    }
+    .actions a.primary { background: var(--accent); color: #081018; border-color: var(--accent); }
+    h2 { font-size: 22px; margin: 36px 0 8px; }
+    p { margin: 0 0 12px; }
+    code, pre {
+      font-family: ui-monospace, "Cascadia Code", monospace;
+      font-size: 15px;
+    }
+    pre {
+      background: #0c1016;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      overflow: auto;
+    }
+    .meta, footer { color: var(--muted); font-size: 15px; }
+    footer { margin-top: 48px; }
+  </style>
+</head>
+<body>
+  <main>
+    <img class="logo" src="wallpaperer.png" alt="Wallpaperer icon: one sunset across six monitors">
+    <h1>Wallpaperer</h1>
+    <p class="lead">Place a picture on each monitor, then apply them as one spanned wallpaper on GNOME.</p>
+    <p class="meta">Version 0.1.0</p>
+    <div class="actions">
+      <a class="primary" href="https://github.com/RossWright/Wallpaperer/releases/latest/download/wallpaperer_amd64.deb">Download .deb</a>
+      <a href="https://github.com/RossWright/Wallpaperer/releases/latest/download/Wallpaperer-x86_64.AppImage">Download AppImage</a>
+      <a href="https://github.com/RossWright/Wallpaperer">Source</a>
+    </div>
+
+    <h2>Install</h2>
+    <p>The buttons download the files attached to the <a href="https://github.com/RossWright/Wallpaperer/releases">latest GitHub Release</a>. They are not stored in the git repository.</p>
+    <pre>sudo apt install ./wallpaperer_amd64.deb</pre>
+    <p>Or run the AppImage. To build either one yourself:</p>
+    <pre>./packaging/build.sh</pre>
+
+    <footer>© 2026 Pross Co.</footer>
+  </main>
+</body>
+</html>

@@ -5,6 +5,7 @@
         x:Class="Wallpaperer.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="Wallpaperer"
+        Icon="avares://Wallpaperer/Assets/wallpaperer.png"
         Width="1100"
         Height="800"
         MinWidth="860"
@@ -15,7 +16,8 @@
       <TextBlock Text="Wallpaperer"
                  FontSize="22"
                  FontWeight="SemiBold"
-                 VerticalAlignment="Center"/>
+                 VerticalAlignment="Center"
+                 TextTrimming="CharacterEllipsis"/>
       <StackPanel Grid.Column="1"
                   Orientation="Horizontal"
                   Spacing="14"
@@ -23,7 +25,7 @@
         <CheckBox Content="Auto-apply"
                   IsChecked="{Binding AutoApply, Mode=TwoWay}"
                   VerticalAlignment="Center"
-                  ToolTip.Tip="Apply the desktop wallpaper about half a second after each change"/>
+                  ToolTip.Tip="Apply the wallpaper you are editing about half a second after each change"/>
         <Button Content="Apply"
                 Command="{Binding ApplyCommand}"
                 MinWidth="112"

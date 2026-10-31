@@ -107,9 +107,9 @@
       "kind": "card",
       "parent": {
         "type": "stage",
-        "id": "doing"
+        "id": "done"
       },
-      "index": 10,
+      "index": 30,
       "summary": "v1 only updates the desktop background. Also set the GNOME lock screen so the same spanned image shows there.",
       "tags": [
         "grok"
@@ -137,9 +137,9 @@
       "kind": "card",
       "parent": {
         "type": "stage",
-        "id": "to-do"
+        "id": "doing"
       },
-      "index": 50,
+      "index": 10,
       "summary": "Add a .desktop file and an installer so the app can be launched without dotnet run.",
       "tags": [
         "grok"
@@ -169,7 +169,7 @@
         "type": "stage",
         "id": "done"
       },
-      "index": 30,
+      "index": 40,
       "summary": "Change the interaction model again. The user should select one or more monitors as we\u0027ve established and then any picture they select fills the selected monitors - no drag and drop needed. If the user does mouse down on a pic and drag it to a monitor, it should set it on the span if the drop monitor is part of the selection, or just change that monitor if it is not - without resetting the selection. Also, add an auto-apply toggle by the apply button such that when a change is made there is like a 500ms debounce before the new selection is applied to the desktop",
       "tags": [],
       "isArchived": false

@@ -10,17 +10,18 @@ public sealed class GnomeWallpaperApplier(IProcessRunner processes)
             throw new WallpaperApplyException($"Could not read {imagePath}.");
 
         var quotedUri = Quote(new Uri(imagePath).AbsoluteUri);
-        await SetAsync("picture-uri", quotedUri, cancellationToken);
-        await SetAsync("picture-uri-dark", quotedUri, cancellationToken);
-        await SetAsync("picture-options", Quote("spanned"), cancellationToken);
-        DeleteOlder(imagePath);
+        var spanned = Quote("spanned");
+        await SetAsync("org.gnome.desktop.background", "picture-uri", quotedUri, cancellationToken);
+        await SetAsync("org.gnome.desktop.background", "picture-uri-dark", quotedUri, cancellationToken);
+        await SetAsync("org.gnome.desktop.background", "picture-options", spanned, cancellationToken);
+        DeleteOlderSpanFiles(imagePath);
     }
 
-    private async Task SetAsync(string key, string value, CancellationToken cancellationToken)
+    private async Task SetAsync(string schema, string key, string value, CancellationToken cancellationToken)
     {
         var result = await processes.RunAsync(
             "gsettings",
-            ["set", "org.gnome.desktop.background", key, value],
+            ["set", schema, key, value],
             cancellationToken);
 
         if (result.ExitCode != 0)
@@ -32,7 +33,7 @@ public sealed class GnomeWallpaperApplier(IProcessRunner processes)
         }
     }
 
-    private static void DeleteOlder(string imagePath)
+    private static void DeleteOlderSpanFiles(string imagePath)
     {
         var directory = Path.GetDirectoryName(imagePath);
         if (string.IsNullOrEmpty(directory))

@@ -1,6 +1,6 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/Wallpaperer/Wallpaperer.csproj" />
+    <Project Path="src/Wallpaperer.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Wallpaperer.Tests/Wallpaperer.Tests.csproj" />

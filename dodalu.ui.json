@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "projectId": "a80a3be0526342c68c5011099ccffe0a",
+  "appearance": {
+    "backgroundColor": "#1b1f24",
+    "cardBackgroundColor": "",
+    "cardForegroundColor": "",
+    "selectionColor": "#fec33d",
+    "selectionForegroundColor": "",
+    "changeSelectedCardColors": false,
+    "bucketColor": "#79A4A4",
+    "bucketForegroundColor": "#1c2128",
+    "bucketCardColor": "",
+    "bucketCardForegroundColor": "",
+    "wallpaperFile": "dodalu.wp.jpg",
+    "wallpaperMode": "zoom",
+    "columnOpacity": 0.8
+  },
+  "summaryDisplayLength": 160,
+  "features": {
+    "useNumbers": false,
+    "showTagsOnCards": true,
+    "showAttachmentCount": false,
+    "confirmAttachmentCopies": true,
+    "confirmAttachmentCopyOverMb": 25,
+    "showTagFilters": false,
+    "showBoardTagFilter": false,
+    "useSpecs": false,
+    "showStageBucketCardCounts": false,
+    "showStageCardCounts": false,
+    "showBucketCardCounts": false,
+    "useColumnHeaderCardOps": false,
+    "stageTitleOnOwnRow": false,
+    "centerStageTitles": true,
+    "hideEmptyEffortBubbles": false,
+    "showRemainingEffort": true,
+    "showSpentEffort": false,
+    "showProjectPath": false,
+    "showUndoRedo": false,
+    "searchChrome": "hidden",
+    "searchIncludeSpecs": false,
+    "archiveChrome": "column",
+    "coverImagePosition": "betweenTitleAndSummary"
+  },
+  "stages": [
+    {
+      "id": "to-do",
+      "backgroundColor": "#2f4f4f",
+      "width": 1
+    },
+    {
+      "id": "doing",
+      "backgroundColor": "#1e3a5f",
+      "width": 1
+    },
+    {
+      "id": "done",
+      "backgroundColor": "#D9E3F8",
+      "width": 1
+    }
+  ],
+  "tags": [
+    {
+      "id": "grok",
+      "color": "#ef5350"
+    }
+  ],
+  "themeMode": "system",
+  "useSharedLook": true,
+  "seedHash": "9B6707D1CC7858B13451D79257D4B5D2A9DA83B57CA479FA834E393B8567572C",
+  "seedUpdatedUtc": "2026-10-31T05:26:11.8682913+00:00"
+}

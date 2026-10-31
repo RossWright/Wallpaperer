@@ -16,7 +16,8 @@ public partial class MainWindow : Window
             new MutterMonitorLayoutSource(processes),
             new GnomeWallpaperApplier(processes),
             new ThumbnailCache(ThumbnailCache.DefaultDirectory()),
-            UiSettingsStore.Load(UiSettingsStore.DefaultPath()));
+            UiSettingsStore.Load(UiSettingsStore.DefaultPath()),
+            new GnomeCurrentWallpaperSource(processes));
     }
 
     protected override void OnOpened(EventArgs e)

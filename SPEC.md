@@ -176,21 +176,19 @@ Apply runs off the UI thread. The button stays disabled until it finishes. On su
 ## Project shape
 
 ```
-Wallpaperer.sln
-src/Wallpaperer/
-  Wallpaperer.csproj
+Wallpaperer.slnx
+src/Wallpaperer.csproj
   App.axaml
   Views/MainWindow.axaml
   ViewModels/MainWindowViewModel.cs
   Models/MonitorDevice.cs
-  Models/PictureItem.cs
-  Services/MutterMonitorLayoutSource.cs
-  Services/AvaloniaMonitorLayoutSource.cs
   Services/PictureLibrary.cs
   Services/ThumbnailCache.cs
   Services/WallpaperComposer.cs
   Services/GnomeWallpaperApplier.cs
 tests/Wallpaperer.Tests/
+packaging/build.sh
+docs/index.html
 ```
 
 View models call services. Services do not reference Avalonia controls, except `AvaloniaMonitorLayoutSource`, which is the fallback and may read `Screens`. The composer and the Mutter parser are pure and are what the tests cover.
@@ -244,4 +242,3 @@ Unit tests, no display required:
 - Saving and loading setups.
 - Per-monitor fit choices. v1 is cover only.
 - Lock screen, slideshow, and background color picking.
-- Packaging, a `.desktop` file, and an installer. Run with `dotnet run`.
