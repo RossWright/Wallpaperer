@@ -9,16 +9,35 @@ public sealed class UiSettingsStore
 
     private readonly string _path;
 
-    public UiSettingsStore(string path, string? sizeFilterId, bool autoApply = false)
+    public UiSettingsStore(
+        string path,
+        string? sizeFilterId,
+        bool autoApply = false,
+        IReadOnlyList<LibraryPin>? pins = null,
+        IReadOnlyList<string>? hiddenImages = null,
+        IReadOnlyList<string>? hiddenFolders = null,
+        IReadOnlyList<string>? shownImages = null)
     {
         _path = path;
         SizeFilterId = sizeFilterId;
         AutoApply = autoApply;
+        Pins = pins?.ToList() ?? [];
+        HiddenImages = hiddenImages?.ToList() ?? [];
+        HiddenFolders = hiddenFolders?.ToList() ?? [];
+        ShownImages = shownImages?.ToList() ?? [];
     }
 
     public string? SizeFilterId { get; set; }
 
     public bool AutoApply { get; set; }
+
+    public List<LibraryPin> Pins { get; }
+
+    public List<string> HiddenImages { get; }
+
+    public List<string> HiddenFolders { get; }
+
+    public List<string> ShownImages { get; }
 
     public static string DefaultPath()
     {
@@ -34,7 +53,14 @@ public sealed class UiSettingsStore
                 return new UiSettingsStore(path, null);
 
             var file = JsonSerializer.Deserialize<SettingsFile>(File.ReadAllText(path), JsonOptions);
-            return new UiSettingsStore(path, file?.SizeFilterId, file?.AutoApply ?? false);
+            return new UiSettingsStore(
+                path,
+                file?.SizeFilterId,
+                file?.AutoApply ?? false,
+                file?.Pins,
+                file?.HiddenImages,
+                file?.HiddenFolders,
+                file?.ShownImages);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -50,7 +76,9 @@ public sealed class UiSettingsStore
             if (!string.IsNullOrEmpty(directory))
                 Directory.CreateDirectory(directory);
 
-            var json = JsonSerializer.Serialize(new SettingsFile(SizeFilterId, AutoApply), JsonOptions);
+            var json = JsonSerializer.Serialize(
+                new SettingsFile(SizeFilterId, AutoApply, Pins, HiddenImages, HiddenFolders, ShownImages),
+                JsonOptions);
             File.WriteAllText(_path, json);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -61,5 +89,9 @@ public sealed class UiSettingsStore
 
     private sealed record SettingsFile(
         [property: JsonPropertyName("sizeFilterId")] string? SizeFilterId,
-        [property: JsonPropertyName("autoApply")] bool AutoApply = false);
+        [property: JsonPropertyName("autoApply")] bool AutoApply = false,
+        [property: JsonPropertyName("pins")] List<LibraryPin>? Pins = null,
+        [property: JsonPropertyName("hiddenImages")] List<string>? HiddenImages = null,
+        [property: JsonPropertyName("hiddenFolders")] List<string>? HiddenFolders = null,
+        [property: JsonPropertyName("shownImages")] List<string>? ShownImages = null);
 }

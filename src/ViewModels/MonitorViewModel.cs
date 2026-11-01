@@ -26,6 +26,8 @@ public partial class MonitorViewModel : ObservableObject
 
     public bool HasImage => AssignedPath is not null;
 
+    public bool ShowsLabel => Preview is null;
+
     [ObservableProperty]
     private string? assignedPath;
 
@@ -37,8 +39,6 @@ public partial class MonitorViewModel : ObservableObject
 
     [ObservableProperty]
     private bool isSelected;
-
-    public int? SpanGroupId { get; set; }
 
     [ObservableProperty]
     private double viewX;
@@ -72,13 +72,13 @@ public partial class MonitorViewModel : ObservableObject
         var previous = Preview;
         Preview = bitmap;
         previous?.Dispose();
+        OnPropertyChanged(nameof(ShowsLabel));
     }
 
     public void DisposePreview()
     {
         _suppressChange = true;
         AssignedPath = null;
-        SpanGroupId = null;
         SetPreview(null);
         _suppressChange = false;
     }
@@ -87,7 +87,6 @@ public partial class MonitorViewModel : ObservableObject
     private void Clear()
     {
         AssignedPath = null;
-        SetPreview(null);
     }
 
     private bool CanClear() => HasImage;

@@ -95,7 +95,11 @@ public partial class MonitorArrangement : UserControl
 
         var monitor = HitMonitor(e.GetPosition(Surface));
         if (monitor is null)
+        {
+            _viewModel.ClearSelection();
+            e.Handled = true;
             return;
+        }
 
         _pressConnector = monitor.Device.Connector;
         _pressPoint = e.GetPosition(this);

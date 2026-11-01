@@ -113,6 +113,92 @@ public class WallpaperComposerTests
     }
 
     [Fact]
+    public void A_new_span_paints_over_the_full_wallpaper_without_moving_it()
+    {
+        var root = TempDirectory();
+        try
+        {
+            var wallpaper = WriteDesk(root);
+            var white = WriteSolid(root, "white.png", SKColors.White, 8, 8);
+            var monitors = new[]
+            {
+                Device("T", 10, 0, 10, 10),
+                Device("L", 0, 10, 10, 10),
+                Device("M", 10, 10, 10, 10),
+                Device("R", 20, 10, 10, 10),
+            };
+
+            using var layered = WallpaperComposer.Render(
+                monitors,
+                [
+                    new ImagePlacement(wallpaper, ["T", "L", "M", "R"]),
+                    new ImagePlacement(white, ["L", "M"]),
+                ],
+                CancellationToken.None);
+
+            AssertColor(SKColors.Magenta, layered.GetPixel(15, 5));
+            AssertColor(SKColors.White, layered.GetPixel(5, 15));
+            AssertColor(SKColors.White, layered.GetPixel(15, 15));
+            AssertColor(SKColors.Blue, layered.GetPixel(25, 15));
+
+            using var cleared = WallpaperComposer.Render(
+                monitors,
+                [new ImagePlacement(wallpaper, ["T", "L", "M", "R"], ["T", "R"])],
+                CancellationToken.None);
+            AssertColor(SKColors.Magenta, cleared.GetPixel(15, 5));
+            AssertColor(SKColors.Black, cleared.GetPixel(5, 15));
+            AssertColor(SKColors.Blue, cleared.GetPixel(25, 15));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_covered_picture_is_left_out_and_new_paint_matches_a_full_compose()
+    {
+        var root = TempDirectory();
+        try
+        {
+            var wallpaper = WriteDesk(root);
+            var white = WriteSolid(root, "white.png", SKColors.White, 8, 8);
+            var monitors = new[]
+            {
+                Device("T", 10, 0, 10, 10),
+                Device("L", 0, 10, 10, 10),
+                Device("M", 10, 10, 10, 10),
+                Device("R", 20, 10, 10, 10),
+            };
+            var hidden = new ImagePlacement(Path.Combine(root, "missing.png"), ["L", "M"]);
+            var overlay = new ImagePlacement(white, ["L", "M"]);
+
+            using var skipped = WallpaperComposer.Render(
+                monitors,
+                [new ImagePlacement(wallpaper, ["T", "L", "M", "R"]), hidden, overlay],
+                CancellationToken.None);
+            AssertColor(SKColors.Magenta, skipped.GetPixel(15, 5));
+            AssertColor(SKColors.White, skipped.GetPixel(5, 15));
+            AssertColor(SKColors.Blue, skipped.GetPixel(25, 15));
+
+            using var underlay = WallpaperComposer.Render(
+                monitors,
+                [new ImagePlacement(wallpaper, ["T", "L", "M", "R"])],
+                CancellationToken.None);
+            using var painted = WallpaperComposer.PaintOn(underlay, monitors, [overlay], CancellationToken.None);
+            Assert.NotNull(painted);
+            AssertColor(SKColors.Magenta, painted.GetPixel(15, 5));
+            AssertColor(SKColors.White, painted.GetPixel(5, 15));
+            AssertColor(SKColors.White, painted.GetPixel(15, 15));
+            AssertColor(SKColors.Blue, painted.GetPixel(25, 15));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveJpeg_uses_the_span_timestamp_name()
     {
         var root = TempDirectory();
@@ -160,6 +246,34 @@ public class WallpaperComposerTests
         using var stream = File.Create(path);
         data!.SaveTo(stream);
         return path;
+    }
+
+    private static string WriteDesk(string directory)
+    {
+        var path = Path.Combine(directory, "desk.png");
+        using var bitmap = new SKBitmap(30, 20);
+        using (var canvas = new SKCanvas(bitmap))
+            canvas.Clear(SKColors.Black);
+
+        Fill(bitmap, 10, 0, 10, 10, SKColors.Yellow);
+        Fill(bitmap, 12, 2, 6, 6, SKColors.Magenta);
+        Fill(bitmap, 0, 10, 10, 10, SKColors.Red);
+        Fill(bitmap, 10, 10, 10, 10, SKColors.Green);
+        Fill(bitmap, 20, 10, 10, 10, SKColors.Blue);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        using var stream = File.Create(path);
+        data!.SaveTo(stream);
+        return path;
+    }
+
+    private static void Fill(SKBitmap bitmap, int x, int y, int width, int height, SKColor color)
+    {
+        for (var px = x; px < x + width; px++)
+        {
+            for (var py = y; py < y + height; py++)
+                bitmap.SetPixel(px, py, color);
+        }
     }
 
     private static string WriteSolid(string directory, string name, SKColor color, int width, int height)

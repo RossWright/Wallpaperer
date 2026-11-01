@@ -1,6 +1,6 @@
 # Wallpaperer
 
-Version 0.1.0. Copyright © 2026 Pross Co.
+Version 0.1.1. Copyright © 2026 Pross Co.
 
 Wallpaperer shows your monitors, lets you place a picture on each one, and applies them as a single spanned wallpaper on GNOME.
 
@@ -12,12 +12,14 @@ dotnet run --project src/Wallpaperer.csproj
 
 ## Packages
 
-`packaging/build.sh` publishes a self-contained linux-x64 build and writes versioned files plus two stable names:
+`packaging/build.sh` publishes a self-contained linux-x64 build, packs it with Velopack, and writes:
 
 - `dist/wallpaperer_amd64.deb`
 - `dist/Wallpaperer-x86_64.AppImage`
+- `dist/releases.linux.json`
+- the Velopack `.nupkg`
 
-Create a [GitHub Release](https://github.com/RossWright/Wallpaperer/releases) and attach those two files. The website downloads them from `/releases/latest/download/`. They are not committed.
+Create a [GitHub Release](https://github.com/RossWright/Wallpaperer/releases) and attach those files. The website downloads the stable `.deb` and AppImage names. An installed copy checks that release and shows **Update available** when a newer Velopack package is attached. The files are not committed.
 
 ## Site
 

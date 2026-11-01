@@ -17,7 +17,8 @@ public partial class MainWindow : Window
             new GnomeWallpaperApplier(processes),
             new ThumbnailCache(ThumbnailCache.DefaultDirectory()),
             UiSettingsStore.Load(UiSettingsStore.DefaultPath()),
-            new GnomeCurrentWallpaperSource(processes));
+            new GnomeCurrentWallpaperSource(processes),
+            new VelopackUpdateCheck());
     }
 
     protected override void OnOpened(EventArgs e)

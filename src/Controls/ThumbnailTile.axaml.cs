@@ -1,6 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Wallpaperer.Services;
 using Wallpaperer.ViewModels;
 
 namespace Wallpaperer.Controls;
@@ -15,6 +18,9 @@ public partial class ThumbnailTile : UserControl
     public ThumbnailTile()
     {
         InitializeComponent();
+        var menu = new ContextMenu { MaxHeight = 720 };
+        menu.Opening += (_, _) => PopulateMenu(menu);
+        ContextMenu = menu;
         PointerPressed += OnPointerPressed;
         PointerMoved += OnPointerMoved;
         PointerReleased += OnPointerReleased;
@@ -112,5 +118,59 @@ public partial class ThumbnailTile : UserControl
 
         if (TopLevel.GetTopLevel(this)?.DataContext is MainWindowViewModel viewModel)
             await viewModel.AssignSelectionAsync(item.Path);
+    }
+
+    private void PopulateMenu(ContextMenu menu)
+    {
+        menu.Items.Clear();
+        if (_item is null)
+            return;
+
+        var viewModel = TopLevel.GetTopLevel(this)?.DataContext as MainWindowViewModel;
+        var picture = _item;
+        menu.Items.Add(CommandItem("move image to top", () => viewModel?.MoveImageToTop(picture)));
+        menu.Items.Add(CommandItem("move folder to top", () => viewModel?.MoveFolderToTop(picture)));
+        menu.Items.Add(CommandItem("hide this image", () => viewModel?.HideImage(picture)));
+
+        var hideFolder = new MenuItem { Header = "hide folder" };
+        foreach (var folder in PictureLibraryOrganization.AncestorFolders(picture.Path))
+        {
+            var chosen = folder;
+            hideFolder.Items.Add(CommandItem(
+                PictureLibraryOrganization.DisplayFolder(chosen),
+                () => viewModel?.HideFolder(chosen)));
+        }
+
+        menu.Items.Add(hideFolder);
+        if (viewModel is null || !viewModel.IsPictureHidden(picture.Path))
+            return;
+
+        menu.Items.Add(new Separator());
+        menu.Items.Add(CommandItem("show this image", () => viewModel.ShowImage(picture)));
+        var covered = viewModel.HiddenFoldersCovering(picture.Path);
+        if (covered.Count == 0)
+            return;
+
+        var showFolder = new MenuItem { Header = "show folder" };
+        foreach (var folder in covered)
+        {
+            var chosen = folder;
+            showFolder.Items.Add(CommandItem(
+                PictureLibraryOrganization.DisplayFolder(chosen),
+                () => viewModel.ShowFolder(chosen)));
+        }
+
+        menu.Items.Add(showFolder);
+    }
+
+    private static MenuItem CommandItem(string header, Action action)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += (_, args) =>
+        {
+            action();
+            args.Handled = true;
+        };
+        return item;
     }
 }

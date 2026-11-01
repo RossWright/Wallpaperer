@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build a .deb and an AppImage for Wallpaperer. This does not install either
-# package and it does not start the app.
+# Build a Velopack .deb and AppImage for Wallpaperer. This does not install
+# either package and it does not start the app.
 #
 # Usage, from the repository root:
 #   ./packaging/build.sh
@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 DEB_ARCH="amd64"
 APPIMAGE_ARCH="x86_64"
 
@@ -74,14 +74,46 @@ install_icons() {
   done
 }
 
+chmod -R a+rX "$PUBLISH"
+chmod 755 "$PUBLISH/Wallpaperer"
+
+if ! command -v vpk >/dev/null 2>&1; then
+  echo "Installing the Velopack vpk tool..."
+  dotnet tool update -g vpk
+  export PATH="$PATH:$HOME/.dotnet/tools"
+fi
+if ! command -v vpk >/dev/null 2>&1; then
+  echo "error: vpk was not found after install. Add ~/.dotnet/tools to PATH and run this again." >&2
+  exit 1
+fi
+
+echo "Packing a Velopack AppImage..."
+VELOPACK_DIR="$STAGE/velopack"
+mkdir -p "$VELOPACK_DIR"
+vpk pack \
+  --packId Wallpaperer \
+  --packVersion "$VERSION" \
+  --packDir "$PUBLISH" \
+  --mainExe Wallpaperer \
+  --channel linux \
+  --runtime linux-x64 \
+  --icon "$ICON_SRC/256x256/apps/wallpaperer.png" \
+  --packTitle Wallpaperer \
+  --packAuthors "Pross Co." \
+  --categories "Graphics;" \
+  --outputDir "$VELOPACK_DIR"
+
+APPIMAGE_BUILT="$(find "$VELOPACK_DIR" -name '*.AppImage' -print -quit)"
+if [[ -z "$APPIMAGE_BUILT" ]]; then
+  echo "error: vpk did not produce an AppImage in $VELOPACK_DIR" >&2
+  exit 1
+fi
+
 echo "Building wallpaperer_${VERSION}_${DEB_ARCH}.deb..."
 DEB_ROOT="$STAGE/deb"
-APP_DIR="$DEB_ROOT/usr/lib/wallpaperer"
-mkdir -p "$APP_DIR" "$DEB_ROOT/usr/bin" "$DEB_ROOT/usr/share/applications" "$DEB_ROOT/DEBIAN"
-cp -a "$PUBLISH"/. "$APP_DIR"/
-chmod -R a+rX "$APP_DIR"
-chmod 755 "$APP_DIR/Wallpaperer"
-ln -s ../lib/wallpaperer/Wallpaperer "$DEB_ROOT/usr/bin/wallpaperer"
+mkdir -p "$DEB_ROOT/opt/Wallpaperer" "$DEB_ROOT/usr/bin" "$DEB_ROOT/usr/share/applications" "$DEB_ROOT/DEBIAN"
+install -m 755 "$APPIMAGE_BUILT" "$DEB_ROOT/opt/Wallpaperer/Wallpaperer.AppImage"
+ln -s /opt/Wallpaperer/Wallpaperer.AppImage "$DEB_ROOT/usr/bin/wallpaperer"
 install -m 644 "$DESKTOP_TEMPLATE" "$DEB_ROOT/usr/share/applications/wallpaperer.desktop"
 install_icons "$DEB_ROOT/usr/share/icons/hicolor"
 
@@ -96,15 +128,17 @@ Maintainer: Pross Co. <RossWright@users.noreply.github.com>
 Homepage: https://github.com/RossWright/Wallpaperer
 Installed-Size: ${INSTALLED_SIZE}
 Depends: libc6 (>= 2.35), libgcc-s1, libstdc++6, libfontconfig1, libssl3t64 | libssl3, libx11-6, libxext6, libxfixes3, libxi6, libxrandr2, libxcursor1, libice6, libsm6, libgl1, libegl1, libgtk-3-0t64 | libgtk-3-0, libglib2.0-0t64 | libglib2.0-0
+Recommends: libfuse2t64 | libfuse2
 Description: Arrange pictures across monitors
  Wallpaperer composes one wallpaper across your monitors and applies it
- on the GNOME desktop.
+ on the GNOME desktop. Updates are applied in the app.
 EOF
 
 cat > "$DEB_ROOT/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
 set -e
 if [ "$1" = "configure" ]; then
+  chmod 777 /opt/Wallpaperer 2>/dev/null || true
   if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database -q /usr/share/applications || true
   fi
@@ -127,6 +161,11 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
 fi
 EOF
 chmod 755 "$DEB_ROOT/DEBIAN/postinst" "$DEB_ROOT/DEBIAN/postrm"
+find "$DEB_ROOT" -type d -exec chmod 755 {} +
+chmod 755 "$DEB_ROOT/opt/Wallpaperer/Wallpaperer.AppImage"
+# Velopack replaces the AppImage in place. The directory has to be writable
+# by the user who clicks Update available.
+chmod 777 "$DEB_ROOT/opt/Wallpaperer"
 
 mkdir -p "$DIST"
 DEB_PATH="$DIST/wallpaperer_${VERSION}_${DEB_ARCH}.deb"
@@ -137,39 +176,11 @@ if command -v desktop-file-validate >/dev/null 2>&1; then
   desktop-file-validate "$DEB_ROOT/usr/share/applications/wallpaperer.desktop"
 fi
 
-echo "Building Wallpaperer-${VERSION}-${APPIMAGE_ARCH}.AppImage..."
-APPDIR="$STAGE/Wallpaperer.AppDir"
-mkdir -p "$APPDIR/usr/lib/wallpaperer" "$APPDIR/usr/bin" "$APPDIR/usr/share/applications"
-cp -a "$PUBLISH"/. "$APPDIR/usr/lib/wallpaperer"/
-chmod -R a+rX "$APPDIR"
-chmod 755 "$APPDIR/usr/lib/wallpaperer/Wallpaperer"
-ln -s ../lib/wallpaperer/Wallpaperer "$APPDIR/usr/bin/wallpaperer"
-install -m 644 "$DESKTOP_TEMPLATE" "$APPDIR/wallpaperer.desktop"
-install -m 644 "$DESKTOP_TEMPLATE" "$APPDIR/usr/share/applications/wallpaperer.desktop"
-install -m 644 "$ICON_SRC/256x256/apps/wallpaperer.png" "$APPDIR/wallpaperer.png"
-install -m 644 "$ICON_SRC/256x256/apps/wallpaperer.png" "$APPDIR/.DirIcon"
-install_icons "$APPDIR/usr/share/icons/hicolor"
-cat > "$APPDIR/AppRun" <<'EOF'
-#!/bin/sh
-set -e
-HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/lib/wallpaperer/Wallpaperer" "$@"
-EOF
-chmod 755 "$APPDIR/AppRun"
-
-TOOL_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/wallpaperer"
-TOOL="$TOOL_DIR/appimagetool-${APPIMAGE_ARCH}.AppImage"
-if [[ ! -x "$TOOL" ]]; then
-  mkdir -p "$TOOL_DIR"
-  curl -fsSL -o "$TOOL" \
-    "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage"
-  chmod 755 "$TOOL"
-fi
-
 APPIMAGE_PATH="$DIST/Wallpaperer-${VERSION}-${APPIMAGE_ARCH}.AppImage"
-rm -f "$APPIMAGE_PATH"
-ARCH="$APPIMAGE_ARCH" APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" "$APPDIR" "$APPIMAGE_PATH" >/dev/null
+cp -f "$APPIMAGE_BUILT" "$APPIMAGE_PATH"
 chmod 755 "$APPIMAGE_PATH"
+find "$VELOPACK_DIR" -name 'releases.*.json' -exec cp -f {} "$DIST"/ \;
+find "$VELOPACK_DIR" -name '*.nupkg' -exec cp -f {} "$DIST"/ \;
 
 # Stable names are what the website downloads from the latest GitHub Release.
 cp -f "$DEB_PATH" "$DIST/wallpaperer_amd64.deb"
@@ -181,11 +192,15 @@ echo "  $DEB_PATH"
 echo "  $APPIMAGE_PATH"
 echo "  $DIST/wallpaperer_amd64.deb"
 echo "  $DIST/Wallpaperer-x86_64.AppImage"
+find "$DIST" -maxdepth 1 \( -name 'releases.*.json' -o -name '*.nupkg' \) -print
 echo
 echo "Install the package:"
 echo "  sudo apt install $DEB_PATH"
 echo
 echo "Or run the AppImage directly:"
 echo "  $APPIMAGE_PATH"
+echo
+echo "Attach the deb, AppImage, releases.linux.json, and nupkg to a GitHub Release"
+echo "so an installed copy can show Update available."
 echo
 echo "Neither file was installed, and the app was not started."

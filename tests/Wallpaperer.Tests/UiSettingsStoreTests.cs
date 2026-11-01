@@ -31,6 +31,10 @@ public class UiSettingsStoreTests
             var olderFile = UiSettingsStore.Load(path);
             Assert.Equal("1920x1080", olderFile.SizeFilterId);
             Assert.False(olderFile.AutoApply);
+            Assert.Empty(olderFile.Pins);
+            Assert.Empty(olderFile.HiddenImages);
+            Assert.Empty(olderFile.HiddenFolders);
+            Assert.Empty(olderFile.ShownImages);
         }
         finally
         {

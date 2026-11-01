@@ -22,21 +22,24 @@
                   Orientation="Horizontal"
                   Spacing="14"
                   VerticalAlignment="Center">
-        <CheckBox Content="Auto-apply"
-                  IsChecked="{Binding AutoApply, Mode=TwoWay}"
-                  VerticalAlignment="Center"
-                  ToolTip.Tip="Apply the wallpaper you are editing about half a second after each change"/>
         <Button Content="Apply"
                 Command="{Binding ApplyCommand}"
+                IsVisible="{Binding !AutoApply}"
                 MinWidth="112"
                 Height="36"
                 HorizontalContentAlignment="Center"
                 VerticalContentAlignment="Center"/>
+        <ToggleSwitch Content="Auto-apply"
+                      IsChecked="{Binding AutoApply, Mode=TwoWay}"
+                      OnContent="On"
+                      OffContent="Off"
+                      VerticalAlignment="Center"
+                      ToolTip.Tip="Apply the wallpaper you are editing about half a second after each change"/>
       </StackPanel>
     </Grid>
 
     <Border Grid.Row="1"
-            Height="280"
+            Height="328"
             Margin="20,4,20,8"
             CornerRadius="12"
             Background="#14161B"
@@ -65,12 +68,21 @@
       </Grid>
     </Border>
 
-    <StackPanel Grid.Row="3" Margin="20,4,20,14" Spacing="2">
-      <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
-      <TextBlock Text="{Binding LayoutWarning}"
-                 TextWrapping="Wrap"
-                 Foreground="#E0A040"
-                 IsVisible="{Binding HasLayoutWarning}"/>
-    </StackPanel>
+    <Grid Grid.Row="3" Margin="20,4,20,14" ColumnDefinitions="*,Auto">
+      <StackPanel Spacing="2" VerticalAlignment="Center">
+        <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding LayoutWarning}"
+                   TextWrapping="Wrap"
+                   Foreground="#E0A040"
+                   IsVisible="{Binding HasLayoutWarning}"/>
+      </StackPanel>
+      <Button Grid.Column="1"
+              Content="{Binding UpdateButtonLabel}"
+              Command="{Binding UpdateCommand}"
+              IsVisible="{Binding UpdateAvailable}"
+              Margin="16,0,0,0"
+              Padding="12,6"
+              VerticalAlignment="Center"/>
+    </Grid>
   </Grid>
 </Window>

@@ -1,7 +1,7 @@
-using System.Collections.Specialized;
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Wallpaperer.ViewModels;
 
 namespace Wallpaperer.Controls;
@@ -14,6 +14,7 @@ public partial class PictureGallery : UserControl
     private MainWindowViewModel? _viewModel;
     private int _columns = -1;
     private IReadOnlyList<PictureItemViewModel>? _source;
+    private bool _showHiddenLink;
 
     public PictureGallery()
     {
@@ -50,7 +51,7 @@ public partial class PictureGallery : UserControl
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MainWindowViewModel.Pictures))
+        if (e.PropertyName is nameof(MainWindowViewModel.Pictures) or nameof(MainWindowViewModel.ShowHiddenLink))
         {
             _columns = -1;
             Rebuild();
@@ -64,12 +65,14 @@ public partial class PictureGallery : UserControl
 
         var columns = Math.Max(1, (int)Math.Floor((Bounds.Width + Gap) / (Cell + Gap)));
         var source = _viewModel.Pictures;
-        if (columns == _columns && ReferenceEquals(source, _source))
+        var showHiddenLink = _viewModel.ShowHiddenLink;
+        if (columns == _columns && ReferenceEquals(source, _source) && showHiddenLink == _showHiddenLink)
             return;
 
         _columns = columns;
         _source = source;
-        var rows = new List<PictureRow>();
+        _showHiddenLink = showHiddenLink;
+        var rows = new List<object>();
         for (var index = 0; index < source.Count; index += columns)
         {
             var count = Math.Min(columns, source.Count - index);
@@ -79,6 +82,15 @@ public partial class PictureGallery : UserControl
             rows.Add(new PictureRow(slice));
         }
 
+        if (showHiddenLink)
+            rows.Add(ShowHiddenRow.Instance);
+
         List.ItemsSource = rows;
+    }
+
+    private void OnShowHiddenClick(object? sender, RoutedEventArgs e)
+    {
+        _viewModel?.ShowHiddenImages();
+        e.Handled = true;
     }
 }

@@ -15,35 +15,39 @@
       <Border Background="#334EA1FF"
               IsVisible="{Binding IsSelected}"
               IsHitTestVisible="False"/>
-      <TextBlock Text="Click or drop an image"
-                 IsVisible="{Binding !HasImage}"
-                 HorizontalAlignment="Center"
-                 VerticalAlignment="Center"
-                 Foreground="#C5CAD3"
-                 FontSize="13"
-                 TextAlignment="Center"
-                 Margin="8"/>
-      <Border VerticalAlignment="Bottom" Background="#CC101218" Padding="8,5">
-        <StackPanel Spacing="1">
-          <TextBlock Text="{Binding Title}"
-                     Foreground="White"
-                     FontSize="12"
-                     TextTrimming="CharacterEllipsis"/>
-          <TextBlock Text="{Binding Detail}"
-                     Foreground="#D5DAE3"
-                     FontSize="11"
-                     TextTrimming="CharacterEllipsis"/>
-        </StackPanel>
-      </Border>
-      <Button Content="Clear"
-              Command="{Binding ClearCommand}"
+      <StackPanel IsVisible="{Binding ShowsLabel}"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Margin="8"
+                  Spacing="2">
+        <TextBlock Text="{Binding Title}"
+                   Foreground="White"
+                   FontSize="13"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding Detail}"
+                   Foreground="#D5DAE3"
+                   FontSize="11"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap"/>
+      </StackPanel>
+      <Button Command="{Binding ClearCommand}"
               IsVisible="{Binding HasImage}"
               HorizontalAlignment="Right"
               VerticalAlignment="Top"
               Margin="6"
-              Padding="8,2"
-              MinHeight="0"
-              FontSize="12"/>
+              Width="28"
+              Height="28"
+              Padding="5"
+              Background="#B0101218"
+              BorderThickness="0"
+              ToolTip.Tip="Clear">
+        <Path Stroke="White"
+              StrokeThickness="1.8"
+              StrokeLineCap="Round"
+              Stretch="Uniform"
+              Data="M5,5 L15,15 M15,5 L5,15"/>
+      </Button>
     </Grid>
   </Border>
 </UserControl>

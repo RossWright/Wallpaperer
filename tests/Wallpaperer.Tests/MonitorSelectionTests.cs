@@ -62,6 +62,9 @@ public class MonitorSelectionTests
             viewModel.SelectOnly("HDMI-2");
             Assert.Equal(1, viewModel.Monitors.Count(monitor => monitor.IsSelected));
             Assert.True(viewModel.Monitors.Single(monitor => monitor.Device.Connector == "HDMI-2").IsSelected);
+
+            viewModel.ClearSelection();
+            Assert.Equal(0, viewModel.Monitors.Count(monitor => monitor.IsSelected));
         }
         finally
         {
@@ -113,6 +116,100 @@ public class MonitorSelectionTests
     }
 
     [Fact]
+    public void Ctrl_click_can_select_every_monitor_on_the_desk()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "wallpaperer-tests", Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var viewModel = new MainWindowViewModel(
+                new MutterMonitorLayoutSource(new IdleProcessRunner()),
+                new GnomeWallpaperApplier(new IdleProcessRunner()),
+                new ThumbnailCache(directory),
+                new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null),
+                EmptyCurrentWallpaperSource.Instance);
+            var desk = Desk();
+            foreach (var device in desk)
+                viewModel.Monitors.Add(new MonitorViewModel(device, _ => { }));
+
+            viewModel.SizeFilters = SizeFilterCatalog.Build(desk);
+            viewModel.SelectOnly("DP-4");
+            viewModel.ExtendSelection("HDMI-2");
+            viewModel.ExtendSelection("DP-5");
+
+            Assert.Equal(4, viewModel.Monitors.Count(monitor => monitor.IsSelected));
+            Assert.Equal("3440x1440", viewModel.SelectedSizeFilter?.Id);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_two_monitor_span_selects_the_7680_filter()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "wallpaperer-tests", Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var viewModel = new MainWindowViewModel(
+                new MutterMonitorLayoutSource(new IdleProcessRunner()),
+                new GnomeWallpaperApplier(new IdleProcessRunner()),
+                new ThumbnailCache(directory),
+                new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null),
+                EmptyCurrentWallpaperSource.Instance);
+            foreach (var device in Desk())
+                viewModel.Monitors.Add(new MonitorViewModel(device, _ => { }));
+
+            viewModel.SizeFilters = SizeFilterCatalog.Build(Desk());
+            viewModel.SelectOnly("DP-4");
+            Assert.Equal("3840x2160", viewModel.SelectedSizeFilter?.Id);
+
+            viewModel.ExtendSelection("DP-3");
+            Assert.Equal("2-wide-7680x2160", viewModel.SelectedSizeFilter?.Id);
+            Assert.True(viewModel.Monitors.Single(monitor => monitor.Device.Connector == "DP-4").IsSelected);
+            Assert.True(viewModel.Monitors.Single(monitor => monitor.Device.Connector == "DP-3").IsSelected);
+            Assert.False(viewModel.Monitors.Single(monitor => monitor.Device.Connector == "HDMI-2").IsSelected);
+            Assert.False(viewModel.Monitors.Single(monitor => monitor.Device.Connector == "DP-5").IsSelected);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task An_available_update_shows_the_status_button()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "wallpaperer-tests", Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var updates = new ReadyUpdate();
+            var viewModel = new MainWindowViewModel(
+                new MutterMonitorLayoutSource(new IdleProcessRunner()),
+                new GnomeWallpaperApplier(new IdleProcessRunner()),
+                new ThumbnailCache(directory),
+                new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null),
+                EmptyCurrentWallpaperSource.Instance,
+                updates);
+
+            Assert.False(viewModel.UpdateAvailable);
+            await viewModel.CheckForUpdateAsync();
+            Assert.True(viewModel.UpdateAvailable);
+            Assert.Equal("Update available", viewModel.UpdateButtonLabel);
+
+            await viewModel.UpdateCommand.ExecuteAsync(null);
+            Assert.True(updates.Applied);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void A_monitor_outside_the_box_stays_out()
     {
         var monitors = Desk().ToList();
@@ -134,6 +231,19 @@ public class MonitorSelectionTests
 
     private static MonitorDevice Device(string connector, int x, int y, int width, int height) =>
         new(connector, connector, x, y, width, height, 1, connector == "DP-3", width, height);
+
+    private sealed class ReadyUpdate : IUpdateCheck
+    {
+        public bool Applied { get; private set; }
+
+        public Task<bool> CheckAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task ApplyAsync(CancellationToken cancellationToken)
+        {
+            Applied = true;
+            return Task.CompletedTask;
+        }
+    }
 
     private sealed class IdleProcessRunner : IProcessRunner
     {

@@ -59,6 +59,18 @@ public class SizeFilterCatalogTests
     }
 
     [Fact]
+    public void A_span_matches_its_resolution_and_the_full_desk_uses_the_closest_aspect()
+    {
+        var monitors = Desk();
+        var options = SizeFilterCatalog.Build(monitors);
+
+        Assert.Equal("3840x2160", SizeFilterCatalog.MatchSelection(options, [monitors[2]])?.Id);
+        Assert.Equal("2-wide-7680x2160", SizeFilterCatalog.MatchSelection(options, [monitors[1], monitors[2]])?.Id);
+        Assert.Equal("3440x1440", SizeFilterCatalog.MatchSelection(options, monitors)?.Id);
+        Assert.Null(SizeFilterCatalog.MatchSelection(options, []));
+    }
+
+    [Fact]
     public void A_monitor_a_hundred_pixels_away_is_not_part_of_the_span()
     {
         var monitors = Desk();

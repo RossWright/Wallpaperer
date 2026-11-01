@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SkiaSharp;
 using Wallpaperer.Models;
 using Wallpaperer.Services;
 
@@ -17,6 +18,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly ThumbnailCache _thumbnails;
     private readonly UiSettingsStore _settings;
     private readonly ICurrentWallpaperSource _wallpapers;
+    private readonly IUpdateCheck _updates;
     private CancellationTokenSource? _scanCancellation;
     private CancellationTokenSource? _applyCancellation;
     private int _layoutGeneration;
@@ -26,11 +28,16 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _hasPublished;
     private string? _savedFilterId;
     private string? _selectionAnchor;
-    private int _nextSpanGroup = 1;
     private bool _loadingSettings = true;
+    private readonly List<ImagePlacement> _base = [];
+    private readonly List<ImagePlacement> _edits = [];
+    private bool _wallpaperDirty;
+    private SKBitmap? _composed;
+    private string? _composedPath;
     private readonly DebouncedAction _autoApply = new(TimeSpan.FromMilliseconds(500));
     private bool _shownCurrentWallpaper;
     private bool _showingCurrentWallpaper;
+    private bool _showHidden;
     private IReadOnlyList<PictureItemViewModel> _allPictures = [];
 
     public MainWindowViewModel(
@@ -38,13 +45,15 @@ public partial class MainWindowViewModel : ObservableObject
         GnomeWallpaperApplier applier,
         ThumbnailCache thumbnails,
         UiSettingsStore settings,
-        ICurrentWallpaperSource wallpapers)
+        ICurrentWallpaperSource wallpapers,
+        IUpdateCheck? updates = null)
     {
         _monitors = monitors;
         _applier = applier;
         _thumbnails = thumbnails;
         _settings = settings;
         _wallpapers = wallpapers;
+        _updates = updates ?? NoUpdateCheck.Instance;
         _savedFilterId = settings.SizeFilterId;
         AutoApply = settings.AutoApply;
         _loadingSettings = false;
@@ -59,6 +68,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private IReadOnlyList<PictureItemViewModel> pictures = [];
+
+    [ObservableProperty]
+    private bool showHiddenLink;
 
     [ObservableProperty]
     private IReadOnlyList<SizeFilterOption> sizeFilters = [];
@@ -86,13 +98,41 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(ApplyCommand))]
     private bool autoApply;
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(UpdateCommand))]
+    private bool updateAvailable;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(UpdateCommand))]
+    private bool isUpdating;
+
+    [ObservableProperty]
+    private string updateButtonLabel = "Update available";
+
     public event EventHandler? ApplyFinished;
 
     public async Task StartAsync(Screens screens)
     {
         _scanCancellation = new CancellationTokenSource();
+        _ = CheckForUpdateAsync();
         await ReloadMonitorsAsync(screens);
         await ScanAsync(_scanCancellation.Token);
+    }
+
+    public async Task CheckForUpdateAsync()
+    {
+        try
+        {
+            var available = await _updates.CheckAsync(CancellationToken.None);
+            if (_shuttingDown || !available)
+                return;
+
+            UpdateAvailable = true;
+        }
+        catch (Exception exception)
+        {
+            Trace.WriteLine("Update check failed: " + exception.Message);
+        }
     }
 
     public Task ReloadMonitorsAsync(Screens? screens)
@@ -108,20 +148,26 @@ public partial class MainWindowViewModel : ObservableObject
         _scanCancellation?.Cancel();
         if (!IsSettingWallpaper)
             _applyCancellation?.Cancel();
+        if (!IsApplying)
+        {
+            _composed?.Dispose();
+            _composed = null;
+        }
     }
 
     public void ArrangeMonitors(double panelWidth, double panelHeight)
     {
+        const double instructionBand = 48;
         var arranged = MonitorArrangementLayout.Arrange(
             Monitors.Select(monitor => monitor.Device).ToList(),
             panelWidth,
-            panelHeight,
-            margin: 16);
+            Math.Max(1, panelHeight - instructionBand),
+            margin: 12);
         var byConnector = arranged.ToDictionary(monitor => monitor.Connector);
         foreach (var monitor in Monitors)
         {
             if (byConnector.TryGetValue(monitor.Device.Connector, out var rect))
-                monitor.SetViewRect(rect.X, rect.Y, rect.Width, rect.Height);
+                monitor.SetViewRect(rect.X, rect.Y + instructionBand, rect.Width, rect.Height);
         }
     }
 
@@ -133,13 +179,24 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void ExtendSelection(string connector)
     {
-        if (_selectionAnchor is null)
+        var seeds = Monitors.Where(monitor => monitor.IsSelected).Select(monitor => monitor.Device.Connector).ToList();
+        if (!seeds.Contains(connector))
+            seeds.Add(connector);
+
+        if (seeds.Count == 0)
         {
             SelectOnly(connector);
             return;
         }
 
-        ApplySelection(MonitorSelection.Fill(Devices(), [_selectionAnchor, connector]));
+        _selectionAnchor = seeds[0];
+        ApplySelection(MonitorSelection.Fill(Devices(), seeds));
+    }
+
+    public void ClearSelection()
+    {
+        _selectionAnchor = null;
+        ApplySelection([]);
     }
 
     public void SelectRange(string fromConnector, string toConnector)
@@ -192,27 +249,61 @@ public partial class MainWindowViewModel : ObservableObject
     private async Task ApplyAsync()
     {
         _autoApply.Cancel();
+        _applyCancellation?.Cancel();
         _applyCancellation = new CancellationTokenSource();
         var cancellation = _applyCancellation.Token;
         IsApplying = true;
         try
         {
+            var baked = _edits.ToArray();
+            if (baked.Length == 0 && _composed is not null && SameComposedBase())
+            {
+                _wallpaperDirty = false;
+                return;
+            }
+
             Status = "Composing wallpaper…";
             var devices = Monitors.Select(monitor => monitor.Device).ToList();
-            var placements = Placements();
+            var underlay = _composed;
+            var reuse = underlay is not null && SameComposedBase();
             var directory = WallpaperComposer.DefaultDirectory();
+            (SKBitmap Bitmap, string Path)? pending = null;
 
-            var path = await Task.Run(() =>
+            try
             {
-                using var bitmap = WallpaperComposer.Render(devices, placements, cancellation);
-                cancellation.ThrowIfCancellationRequested();
-                return WallpaperComposer.SaveJpeg(bitmap, directory);
-            }, cancellation);
+                pending = await Task.Run(() =>
+                {
+                    SKBitmap? bitmap = null;
+                    try
+                    {
+                        if (reuse && underlay is not null)
+                            bitmap = WallpaperComposer.PaintOn(underlay, devices, baked, cancellation);
+                        bitmap ??= WallpaperComposer.Render(devices, BasePlus(baked), cancellation);
+                        cancellation.ThrowIfCancellationRequested();
+                        return (bitmap, WallpaperComposer.SaveJpeg(bitmap, directory));
+                    }
+                    catch
+                    {
+                        bitmap?.Dispose();
+                        throw;
+                    }
+                }, cancellation);
 
-            IsSettingWallpaper = true;
-            Status = "Setting wallpaper…";
-            await _applier.ApplyAsync(path, CancellationToken.None);
-            Status = $"Applied {path}";
+                IsSettingWallpaper = true;
+                Status = "Setting wallpaper…";
+                await _applier.ApplyAsync(pending.Value.Path, CancellationToken.None);
+                cancellation.ThrowIfCancellationRequested();
+                FoldIntoBase(pending.Value.Bitmap, pending.Value.Path, baked);
+                pending = null;
+                _wallpaperDirty = _edits.Count > 0;
+                Status = $"Applied {_composedPath}";
+            }
+            catch
+            {
+                if (pending is not null && !ReferenceEquals(pending.Value.Bitmap, _composed))
+                    pending.Value.Bitmap.Dispose();
+                throw;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -226,13 +317,15 @@ public partial class MainWindowViewModel : ObservableObject
         {
             IsApplying = false;
             IsSettingWallpaper = false;
+            ApplyCommand.NotifyCanExecuteChanged();
             ApplyFinished?.Invoke(this, EventArgs.Empty);
         }
     }
 
     private bool HasAssignment() => Monitors.Any(monitor => monitor.HasImage);
 
-    private bool CanApply() => !AutoApply && !IsApplying && HasAssignment();
+    private bool CanApply() =>
+        !AutoApply && !IsApplying && (HasAssignment() || (_wallpaperDirty && _base.Count > 0));
 
     private async Task LoadMonitorsAsync(Screens? screens, int generation)
     {
@@ -285,8 +378,18 @@ public partial class MainWindowViewModel : ObservableObject
             Status = "No monitors detected.";
 
         RefreshSizeFilters();
-        await RefreshSpanPreviewsAsync();
-        await ShowCurrentWallpapersAsync();
+        SyncFilterToSelection();
+        _showingCurrentWallpaper = true;
+        try
+        {
+            await ShowCurrentWallpapersAsync();
+            await RefreshSpanPreviewsAsync();
+        }
+        finally
+        {
+            _showingCurrentWallpaper = false;
+        }
+
         ApplyCommand.NotifyCanExecuteChanged();
     }
 
@@ -388,13 +491,100 @@ public partial class MainWindowViewModel : ObservableObject
         ApplyFilter();
     }
 
+    public void MoveImageToTop(PictureItemViewModel picture)
+    {
+        PictureLibraryOrganization.MoveImageToTop(
+            _settings.Pins,
+            _settings.HiddenImages,
+            _settings.HiddenFolders,
+            _settings.ShownImages,
+            picture.Path);
+        _settings.Save();
+        ApplyFilter();
+    }
+
+    public void MoveFolderToTop(PictureItemViewModel picture)
+    {
+        PictureLibraryOrganization.MoveFolderToTop(
+            _settings.Pins,
+            _settings.HiddenImages,
+            _settings.HiddenFolders,
+            _settings.ShownImages,
+            picture.Path,
+            _allPictures.Select(item => item.Path));
+        _settings.Save();
+        ApplyFilter();
+    }
+
+    public void HideImage(PictureItemViewModel picture)
+    {
+        PictureLibraryOrganization.HideImage(
+            _settings.Pins,
+            _settings.HiddenImages,
+            _settings.ShownImages,
+            picture.Path);
+        _settings.Save();
+        ApplyFilter();
+    }
+
+    public void HideFolder(string folder)
+    {
+        PictureLibraryOrganization.HideFolder(
+            _settings.Pins,
+            _settings.HiddenImages,
+            _settings.HiddenFolders,
+            _settings.ShownImages,
+            folder);
+        _settings.Save();
+        ApplyFilter();
+    }
+
+    public void ShowImage(PictureItemViewModel picture)
+    {
+        PictureLibraryOrganization.ShowImage(
+            _settings.HiddenImages,
+            _settings.HiddenFolders,
+            _settings.ShownImages,
+            picture.Path);
+        _settings.Save();
+        ApplyFilter();
+    }
+
+    public void ShowFolder(string folder)
+    {
+        PictureLibraryOrganization.ShowFolder(_settings.HiddenFolders, folder);
+        _settings.Save();
+        ApplyFilter();
+    }
+
+    public bool IsPictureHidden(string path) =>
+        PictureLibraryOrganization.IsHidden(path, _settings.HiddenImages, _settings.HiddenFolders, _settings.ShownImages);
+
+    public IReadOnlyList<string> HiddenFoldersCovering(string path) =>
+        PictureLibraryOrganization.HiddenAncestors(path, _settings.HiddenFolders);
+
+    public void ShowHiddenImages()
+    {
+        _showHidden = true;
+        ApplyFilter();
+    }
+
     private void ApplyFilter()
     {
         var filter = SelectedSizeFilter;
         PictureItemViewModel[] filtered = filter is null
             ? _allPictures.ToArray()
             : _allPictures.Where(picture => filter.Matches(picture.Record.PixelWidth, picture.Record.PixelHeight)).ToArray();
-        Pictures = filtered;
+        var byPath = filtered.ToDictionary(picture => PictureLibraryOrganization.Normalize(picture.Path));
+        var arranged = PictureLibraryOrganization.Arrange(
+            filtered.Select(picture => picture.Path).ToArray(),
+            _settings.Pins,
+            _settings.HiddenImages,
+            _settings.HiddenFolders,
+            _settings.ShownImages,
+            _showHidden);
+        Pictures = arranged.Paths.Select(path => byPath[PictureLibraryOrganization.Normalize(path)]).ToArray();
+        ShowHiddenLink = !_showHidden && arranged.HiddenCount > 0;
         if (!_hasPublished)
             return;
 
@@ -419,26 +609,16 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void OnMonitorChanged(MonitorViewModel monitor)
     {
-        if (monitor.AssignedPath is null)
-        {
-            List<MonitorViewModel> remaining = [];
-            string? path = null;
-            if (monitor.SpanGroupId is int group)
-            {
-                remaining = Monitors
-                    .Where(item => item != monitor && item.SpanGroupId == group && item.AssignedPath is not null)
-                    .ToList();
-                path = remaining.FirstOrDefault()?.AssignedPath;
-                monitor.SpanGroupId = null;
-            }
-
-            Status = $"Cleared {monitor.Device.Connector}.";
-            if (path is not null)
-                _ = ReflowSpanAsync(remaining, path);
-            ScheduleAutoApply();
-        }
-
         ApplyCommand.NotifyCanExecuteChanged();
+        if (_showingCurrentWallpaper || monitor.AssignedPath is not null)
+            return;
+
+        CancelCompose();
+        var revealed = TakeOffTop(monitor.Device.Connector);
+        _wallpaperDirty = true;
+        Status = $"Cleared {monitor.Device.Connector}.";
+        _ = RevealAsync(monitor, revealed);
+        ScheduleAutoApply();
     }
 
     partial void OnAutoApplyChanged(bool value)
@@ -483,7 +663,7 @@ public partial class MainWindowViewModel : ObservableObject
             await finished.Task;
         }
 
-        if (!AutoApply || _shuttingDown || !HasAssignment())
+        if (!AutoApply || _shuttingDown || (!HasAssignment() && !(_wallpaperDirty && _base.Count > 0)))
             return;
 
         await ApplyAsync();
@@ -496,54 +676,104 @@ public partial class MainWindowViewModel : ObservableObject
         var selected = connectors.ToHashSet(StringComparer.Ordinal);
         foreach (var monitor in Monitors)
             monitor.IsSelected = selected.Contains(monitor.Device.Connector);
+
+        SyncFilterToSelection();
     }
 
-    private List<ImagePlacement> Placements()
+    private void SyncFilterToSelection()
     {
-        var placements = new List<ImagePlacement>();
-        var seen = new HashSet<int>();
-        foreach (var monitor in Monitors)
+        var selected = Monitors.Where(monitor => monitor.IsSelected).Select(monitor => monitor.Device).ToList();
+        var match = SizeFilterCatalog.MatchSelection(SizeFilters, selected);
+        if (match is null || match.Id == SelectedSizeFilter?.Id)
+            return;
+
+        SelectedSizeFilter = match;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanUpdate))]
+    private async Task UpdateAsync()
+    {
+        IsUpdating = true;
+        UpdateButtonLabel = "Updating…";
+        try
         {
-            if (monitor.AssignedPath is null)
-                continue;
+            Status = "Downloading update…";
+            await _updates.ApplyAsync(CancellationToken.None);
+            Status = "Restarting to finish the update…";
+        }
+        catch (Exception exception)
+        {
+            Status = exception.Message;
+            UpdateButtonLabel = "Update available";
+            IsUpdating = false;
+        }
+    }
 
-            if (monitor.SpanGroupId is int group)
+    private bool CanUpdate() => UpdateAvailable && !IsUpdating;
+
+    private List<ImagePlacement> BasePlus(IReadOnlyList<ImagePlacement> edits)
+    {
+        var placements = new List<ImagePlacement>(_base.Count + edits.Count);
+        placements.AddRange(_base);
+        placements.AddRange(edits);
+        return placements;
+    }
+
+    private bool SameComposedBase() =>
+        _composed is not null
+        && _base.Count == 1
+        && string.Equals(_base[0].Path, _composedPath, StringComparison.Ordinal);
+
+    private void CancelCompose() => _applyCancellation?.Cancel();
+
+    private void FoldIntoBase(SKBitmap bitmap, string path, IReadOnlyList<ImagePlacement> baked)
+    {
+        foreach (var edit in baked)
+            _edits.Remove(edit);
+
+        var connectors = Monitors.Select(monitor => monitor.Device.Connector).ToList();
+        _base.Clear();
+        _base.Add(new ImagePlacement(path, connectors));
+        var previous = _composed;
+        _composed = bitmap;
+        _composedPath = path;
+        if (!ReferenceEquals(previous, bitmap))
+            previous?.Dispose();
+
+        _showingCurrentWallpaper = true;
+        try
+        {
+            foreach (var monitor in Monitors)
             {
-                if (!seen.Add(group))
+                if (_edits.Any(edit => VisibleConnectors(edit).Contains(monitor.Device.Connector, StringComparer.Ordinal)))
                     continue;
-
-                var connectors = Monitors
-                    .Where(item => item.SpanGroupId == group && item.AssignedPath is not null)
-                    .Select(item => item.Device.Connector)
-                    .ToList();
-                placements.Add(new ImagePlacement(monitor.AssignedPath, connectors));
-            }
-            else
-            {
-                placements.Add(new ImagePlacement(monitor.AssignedPath, [monitor.Device.Connector]));
+                monitor.AssignedPath = null;
             }
         }
-
-        return placements;
+        finally
+        {
+            _showingCurrentWallpaper = false;
+        }
     }
 
     private async Task ApplyImageAsync(string path, IReadOnlyList<MonitorViewModel> targets, bool announce = true)
     {
-        var previewPath = await _thumbnails.GetJpegAsync(path, 1024, CancellationToken.None);
-        if (previewPath is null)
+        CancelCompose();
+        var connectors = targets.Select(monitor => monitor.Device.Connector).ToList();
+        var layer = new ImagePlacement(path, connectors);
+        _edits.Add(layer);
+        if (!await PaintLayerAsync(layer, connectors))
         {
+            _edits.RemoveAt(_edits.Count - 1);
             if (announce)
                 Status = $"Could not read {path}.";
             return;
         }
 
-        var displaced = CollectDisplaced(targets);
-        if (!await PaintAsync(path, previewPath, targets, targets.Count > 1))
-            return;
+        foreach (var monitor in targets)
+            monitor.AssignedPath = path;
 
-        foreach (var (remaining, oldPath) in displaced)
-            await ReflowSpanAsync(remaining, oldPath);
-
+        _wallpaperDirty = true;
         if (announce)
         {
             var file = Path.GetFileName(path);
@@ -573,156 +803,133 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        _showingCurrentWallpaper = true;
-        try
+        if (current.Desktop.Path is not string desktop || !File.Exists(desktop))
+            return;
+
+        var connectors = Monitors.Select(monitor => monitor.Device.Connector).ToList();
+        _base.Clear();
+        if (current.Desktop.ShowsAsOneSpan(connectors.Count))
+            _base.Add(new ImagePlacement(desktop, connectors));
+        else
         {
-            if (current.Desktop.Path is string desktop && File.Exists(desktop))
-                await ShowPictureAsync(current.Desktop);
-        }
-        finally
-        {
-            _showingCurrentWallpaper = false;
+            foreach (var connector in connectors)
+                _base.Add(new ImagePlacement(desktop, [connector]));
         }
     }
 
-    private async Task ShowPictureAsync(WallpaperPicture picture)
+    private ImagePlacement? TakeOffTop(string connector)
     {
-        if (picture.Path is null)
-            return;
-
-        var monitors = Monitors.ToList();
-        if (picture.ShowsAsOneSpan(monitors.Count))
+        for (var index = _edits.Count - 1; index >= 0; index--)
         {
-            await ApplyImageAsync(picture.Path, monitors, announce: false);
-            return;
-        }
-
-        foreach (var monitor in monitors)
-            await ApplyImageAsync(picture.Path, [monitor], announce: false);
-    }
-
-    private List<(List<MonitorViewModel> Remaining, string Path)> CollectDisplaced(IReadOnlyList<MonitorViewModel> targets)
-    {
-        var targetSet = targets.ToHashSet();
-        var displaced = new List<(List<MonitorViewModel> Remaining, string Path)>();
-        var groups = targets
-            .Select(monitor => monitor.SpanGroupId)
-            .OfType<int>()
-            .Distinct();
-        foreach (var group in groups)
-        {
-            var members = Monitors.Where(monitor => monitor.SpanGroupId == group && monitor.AssignedPath is not null).ToList();
-            if (members.Count == 0 || members[0].AssignedPath is not string path)
+            var visible = VisibleConnectors(_edits[index]);
+            if (!visible.Contains(connector, StringComparer.Ordinal))
                 continue;
 
-            var remaining = members.Where(monitor => !targetSet.Contains(monitor)).ToList();
-            if (remaining.Count > 0)
-                displaced.Add((remaining, path));
+            var remaining = visible.Where(item => !string.Equals(item, connector, StringComparison.Ordinal)).ToList();
+            if (remaining.Count == 0)
+                _edits.RemoveAt(index);
+            else
+                _edits[index] = _edits[index] with { Visible = remaining };
+
+            return LayerCovering(_edits, connector) ?? LayerCovering(_base, connector);
         }
 
-        return displaced;
+        return LayerCovering(_base, connector);
     }
 
-    private async Task<bool> PaintAsync(
-        string path,
-        string previewPath,
-        IReadOnlyList<MonitorViewModel> targets,
-        bool span)
+    private static ImagePlacement? LayerCovering(List<ImagePlacement> layers, string connector)
     {
-        if (!span)
+        for (var index = layers.Count - 1; index >= 0; index--)
+        {
+            if (VisibleConnectors(layers[index]).Contains(connector, StringComparer.Ordinal))
+                return layers[index];
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<string> VisibleConnectors(ImagePlacement placement) =>
+        placement.Visible ?? placement.Connectors;
+
+    private async Task RevealAsync(MonitorViewModel monitor, ImagePlacement? layer)
+    {
+        if (layer is null)
+        {
+            monitor.SetPreview(null);
+            return;
+        }
+
+        if (!await PaintLayerAsync(layer, [monitor.Device.Connector]))
+            return;
+
+        if (_edits.Any(item => VisibleConnectors(item).Contains(monitor.Device.Connector, StringComparer.Ordinal)))
+            monitor.AssignedPath = layer.Path;
+    }
+
+    private async Task<bool> PaintLayerAsync(ImagePlacement layer, IReadOnlyList<string> connectors)
+    {
+        var previewPath = await _thumbnails.GetJpegAsync(layer.Path, 1024, CancellationToken.None);
+        if (previewPath is null)
+            return false;
+
+        var fitted = layer.Connectors.ToList();
+        if (fitted.Count <= 1)
         {
             var bitmap = OpenBitmap(previewPath);
             if (bitmap is null)
+                return false;
+
+            var monitor = Monitors.FirstOrDefault(item => item.Device.Connector == fitted[0]);
+            if (monitor is null || !connectors.Contains(fitted[0], StringComparer.Ordinal))
             {
-                Status = $"Could not read {path}.";
+                bitmap.Dispose();
                 return false;
             }
 
-            targets[0].SpanGroupId = null;
-            targets[0].AssignedPath = path;
-            targets[0].SetPreview(bitmap);
+            monitor.SetPreview(bitmap);
             return true;
         }
 
-        var connectors = targets.Select(monitor => monitor.Device.Connector).ToList();
-        var devices = Devices();
-        var pngs = await Task.Run(() => SpanPreview.PngSlices(previewPath, devices, connectors));
+        var pngs = await Task.Run(() => SpanPreview.PngSlices(previewPath, Devices(), fitted));
         if (pngs is null)
-        {
-            Status = $"Could not read {path}.";
             return false;
-        }
 
-        var bitmaps = pngs.Select(OpenPng).ToList();
-        if (bitmaps.Any(bitmap => bitmap is null))
+        var painted = false;
+        foreach (var connector in connectors)
         {
-            foreach (var bitmap in bitmaps)
-                bitmap?.Dispose();
-            Status = $"Could not read {path}.";
-            return false;
-        }
+            var index = fitted.FindIndex(item => string.Equals(item, connector, StringComparison.Ordinal));
+            if (index < 0 || index >= pngs.Length)
+                continue;
 
-        var group = _nextSpanGroup++;
-        for (var index = 0; index < targets.Count; index++)
-        {
-            targets[index].SpanGroupId = group;
-            targets[index].AssignedPath = path;
-            targets[index].SetPreview(bitmaps[index]);
-        }
-
-        return true;
-    }
-
-    private async Task ReflowSpanAsync(List<MonitorViewModel> members, string path)
-    {
-        if (members.Count == 0)
-            return;
-
-        var previewPath = await _thumbnails.GetJpegAsync(path, 1024, CancellationToken.None);
-        if (previewPath is null)
-            return;
-
-        if (members.Count == 1)
-        {
-            var bitmap = OpenBitmap(previewPath);
+            var bitmap = OpenPng(pngs[index]);
             if (bitmap is null)
-                return;
+                continue;
 
-            members[0].SpanGroupId = null;
-            members[0].SetPreview(bitmap);
-            return;
+            var monitor = Monitors.FirstOrDefault(item => item.Device.Connector == connector);
+            if (monitor is null)
+            {
+                bitmap.Dispose();
+                continue;
+            }
+
+            monitor.SetPreview(bitmap);
+            painted = true;
         }
 
-        var connectors = members.Select(monitor => monitor.Device.Connector).ToList();
-        var devices = Devices();
-        var pngs = await Task.Run(() => SpanPreview.PngSlices(previewPath, devices, connectors));
-        if (pngs is null)
-            return;
-
-        var bitmaps = pngs.Select(OpenPng).ToList();
-        if (bitmaps.Any(bitmap => bitmap is null))
-        {
-            foreach (var bitmap in bitmaps)
-                bitmap?.Dispose();
-            return;
-        }
-
-        for (var index = 0; index < members.Count; index++)
-            members[index].SetPreview(bitmaps[index]);
+        return painted;
     }
 
     private async Task RefreshSpanPreviewsAsync()
     {
-        var groups = Monitors
-            .Where(monitor => monitor.SpanGroupId is not null && monitor.AssignedPath is not null)
-            .GroupBy(monitor => monitor.SpanGroupId!.Value)
-            .ToList();
-        foreach (var group in groups)
+        var painted = new HashSet<string>(StringComparer.Ordinal);
+        var layers = _edits.AsEnumerable().Reverse().Concat(_base.AsEnumerable().Reverse());
+        foreach (var layer in layers)
         {
-            var members = group.ToList();
-            var path = members[0].AssignedPath;
-            if (path is not null)
-                await ReflowSpanAsync(members, path);
+            var pending = VisibleConnectors(layer).Where(painted.Add).ToList();
+            if (pending.Count == 0)
+                continue;
+
+            await PaintLayerAsync(layer, pending);
         }
     }
 

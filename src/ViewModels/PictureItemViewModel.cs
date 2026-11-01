@@ -23,7 +23,7 @@ public partial class PictureItemViewModel : ObservableObject
 
     public string FolderName => System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(Record.Path) ?? "");
 
-    public string Tooltip => string.IsNullOrEmpty(FolderName) ? FileName : FileName + Environment.NewLine + FolderName;
+    public string Tooltip => Path;
 
     [ObservableProperty]
     private Bitmap? thumbnail;

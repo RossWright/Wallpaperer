@@ -124,6 +124,54 @@ public static class SizeFilterCatalog
         return options.First(option => option.Id == fallback);
     }
 
+    public static SizeFilterOption? MatchSelection(
+        IReadOnlyList<SizeFilterOption> options,
+        IReadOnlyList<MonitorDevice> selected)
+    {
+        if (selected.Count == 0)
+            return null;
+
+        var left = selected.Min(monitor => monitor.X);
+        var top = selected.Min(monitor => monitor.Y);
+        var right = selected.Max(monitor => monitor.X + monitor.Width);
+        var bottom = selected.Max(monitor => monitor.Y + monitor.Height);
+        var width = right - left;
+        var height = bottom - top;
+        if (width <= 0 || height <= 0)
+            return null;
+
+        var exact = options.FirstOrDefault(option =>
+            option.Bands.Any(band => band.Width == width && band.Height == height));
+        if (exact is not null)
+            return exact;
+
+        var aspect = width / (double)height;
+        SizeFilterOption? closest = null;
+        var closestAspect = double.MaxValue;
+        var closestPixels = int.MaxValue;
+        foreach (var option in options)
+        {
+            if (option.Id is AnyId or MonitorsId || option.Bands.Count == 0)
+                continue;
+
+            var band = option.Bands[0];
+            if (band.Width <= 0 || band.Height <= 0)
+                continue;
+
+            var aspectDistance = Math.Abs(band.Width / (double)band.Height - aspect);
+            var pixelDistance = Math.Abs(band.Width - width) + Math.Abs(band.Height - height);
+            if (aspectDistance < closestAspect - 0.0001
+                || (Math.Abs(aspectDistance - closestAspect) <= 0.0001 && pixelDistance < closestPixels))
+            {
+                closest = option;
+                closestAspect = aspectDistance;
+                closestPixels = pixelDistance;
+            }
+        }
+
+        return closest;
+    }
+
     private static List<(int Width, int Height)> DistinctMonitorSizes(IReadOnlyList<MonitorDevice> monitors) =>
         monitors
             .Where(monitor => monitor.ModeWidth > 0 && monitor.ModeHeight > 0)

@@ -20,6 +20,7 @@
         <Setter Property="MinHeight" Value="0"/>
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="FocusAdorner" Value="{x:Null}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
       </Style>
       <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="Transparent"/>
@@ -28,7 +29,7 @@
         <Setter Property="Background" Value="Transparent"/>
       </Style>
     </ListBox.Styles>
-    <ListBox.ItemTemplate>
+    <ListBox.DataTemplates>
       <DataTemplate x:DataType="controls:PictureRow">
         <ItemsControl ItemsSource="{Binding Items}" Height="120">
           <ItemsControl.ItemsPanel>
@@ -43,6 +44,19 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </DataTemplate>
-    </ListBox.ItemTemplate>
+      <DataTemplate x:DataType="controls:ShowHiddenRow">
+        <Button HorizontalAlignment="Center"
+                HorizontalContentAlignment="Center"
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="8,4"
+                Cursor="Hand"
+                Click="OnShowHiddenClick">
+          <TextBlock Text="show hidden images"
+                     Foreground="#4EA1FF"
+                     TextDecorations="Underline"/>
+        </Button>
+      </DataTemplate>
+    </ListBox.DataTemplates>
   </ListBox>
 </UserControl>
