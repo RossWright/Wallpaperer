@@ -20,6 +20,8 @@ public readonly record struct SizeBand(int Width, int Height)
 
 public sealed record SizeFilterOption(string Id, string Label, IReadOnlyList<SizeBand> Bands)
 {
+    public int Count { get; init; } = -1;
+
     public bool Matches(int? width, int? height)
     {
         if (Id == SizeFilterCatalog.AnyId)
@@ -30,7 +32,7 @@ public sealed record SizeFilterOption(string Id, string Label, IReadOnlyList<Siz
         return Bands.Any(band => band.Contains(pixelWidth, pixelHeight));
     }
 
-    public override string ToString() => Label;
+    public override string ToString() => Count < 0 ? Label : $"{Label} · {Count}";
 }
 
 public static class SizeFilterCatalog
@@ -94,16 +96,27 @@ public static class SizeFilterCatalog
 
     public static string DefaultId(IReadOnlyList<MonitorDevice> monitors, IReadOnlyList<SizeFilterOption> options)
     {
-        var sizes = DistinctMonitorSizes(monitors);
-        if (sizes.Count == 1)
+        MonitorDevice? biggest = null;
+        long area = -1;
+        foreach (var monitor in monitors)
         {
-            var id = ResolutionId(sizes[0].Width, sizes[0].Height);
+            if (monitor.ModeWidth <= 0 || monitor.ModeHeight <= 0)
+                continue;
+
+            var pixels = (long)monitor.ModeWidth * monitor.ModeHeight;
+            if (pixels > area || (pixels == area && biggest is not null && monitor.ModeWidth > biggest.ModeWidth))
+            {
+                area = pixels;
+                biggest = monitor;
+            }
+        }
+
+        if (biggest is not null)
+        {
+            var id = ResolutionId(biggest.ModeWidth, biggest.ModeHeight);
             if (options.Any(option => option.Id == id))
                 return id;
         }
-
-        if (sizes.Count > 1 && options.Any(option => option.Id == MonitorsId))
-            return MonitorsId;
 
         return AnyId;
     }

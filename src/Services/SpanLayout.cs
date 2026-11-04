@@ -39,6 +39,40 @@ public static class SpanLayout
             throw new ArgumentOutOfRangeException(nameof(sourceWidth));
 
         var scale = Math.Max(destWidth / (float)sourceWidth, destHeight / (float)sourceHeight);
+        return Place(scale, sourceWidth, sourceHeight, destX, destY, destWidth, destHeight);
+    }
+
+    public static CoverPlacement Contain(int sourceWidth, int sourceHeight, int destX, int destY, int destWidth, int destHeight)
+    {
+        if (sourceWidth <= 0 || sourceHeight <= 0 || destWidth <= 0 || destHeight <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sourceWidth));
+
+        var scale = Math.Min(destWidth / (float)sourceWidth, destHeight / (float)sourceHeight);
+        return Place(scale, sourceWidth, sourceHeight, destX, destY, destWidth, destHeight);
+    }
+
+    public static CoverPlacement Center(int sourceWidth, int sourceHeight, int destX, int destY, int destWidth, int destHeight)
+    {
+        if (sourceWidth <= 0 || sourceHeight <= 0 || destWidth <= 0 || destHeight <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sourceWidth));
+
+        return new CoverPlacement(
+            1,
+            destX + (destWidth - sourceWidth) / 2f,
+            destY + (destHeight - sourceHeight) / 2f,
+            sourceWidth,
+            sourceHeight);
+    }
+
+    private static CoverPlacement Place(
+        float scale,
+        int sourceWidth,
+        int sourceHeight,
+        int destX,
+        int destY,
+        int destWidth,
+        int destHeight)
+    {
         var scaledWidth = sourceWidth * scale;
         var scaledHeight = sourceHeight * scale;
         var x = destX + (destWidth - scaledWidth) / 2f;

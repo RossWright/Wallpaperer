@@ -2,7 +2,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Wallpaperer.Models;
 using Wallpaperer.ViewModels;
+using Wallpaperer.Views;
 
 namespace Wallpaperer.Controls;
 
@@ -13,6 +15,21 @@ public partial class MonitorTile : UserControl
     public MonitorTile()
     {
         InitializeComponent();
+        var menu = new ContextMenu { MaxHeight = 720 };
+        var clear = new MenuItem { Header = "Clear screen" };
+        clear.Click += async (_, _) => await ClearScreenAsync();
+        var fit = new MenuItem { Header = "Fit" };
+        foreach (var mode in new[] { ImageFit.Zoom, ImageFit.Fit, ImageFit.Stretch, ImageFit.Center, ImageFit.Tile })
+        {
+            var item = new MenuItem { Header = mode.ToString() };
+            var chosen = mode;
+            item.Click += async (_, _) => await FitAsync(chosen);
+            fit.Items.Add(item);
+        }
+
+        menu.Items.Add(clear);
+        menu.Items.Add(fit);
+        ContextMenu = menu;
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
@@ -93,5 +110,25 @@ public partial class MonitorTile : UserControl
             return;
 
         await viewModel.AssignAsync(_monitor, drop.Value.Path);
+    }
+
+    private async Task ClearScreenAsync()
+    {
+        if (_monitor is null || TopLevel.GetTopLevel(this) is not Window window)
+            return;
+        if (window.DataContext is not MainWindowViewModel viewModel)
+            return;
+
+        var color = await ColorDialog.Pick(window, viewModel.BackgroundColor);
+        if (color is uint argb)
+            await viewModel.ApplyScreenColorAsync(_monitor, argb);
+    }
+
+    private async Task FitAsync(ImageFit fit)
+    {
+        if (_monitor is null || TopLevel.GetTopLevel(this)?.DataContext is not MainWindowViewModel viewModel)
+            return;
+
+        await viewModel.ApplyFitAsync(_monitor, fit);
     }
 }

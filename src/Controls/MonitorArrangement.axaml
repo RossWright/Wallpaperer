@@ -5,14 +5,17 @@
              x:DataType="vm:MainWindowViewModel">
   <Grid>
     <Canvas x:Name="Surface"/>
-    <TextBlock Text="1) Click a screen or CTRL-click or click-drag multiple to select a span. 2) Click a wallpaper to set it for the screen/span"
-               Margin="12,8,12,0"
+    <TextBlock Margin="12,8,12,0"
                FontSize="13"
                Foreground="#C5CAD3"
                TextWrapping="Wrap"
                IsHitTestVisible="False"
                VerticalAlignment="Top"
-               HorizontalAlignment="Left"/>
+               HorizontalAlignment="Left"
+               xml:space="preserve">- Click a screen to select it.
+- Click and drag to select a span of screens.
+- Hold Ctrl or Shift and click to select a span.
+- Then click an image below to set the wallpaper.</TextBlock>
     <TextBlock Text="No monitors detected."
                HorizontalAlignment="Center"
                VerticalAlignment="Center"

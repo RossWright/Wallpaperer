@@ -26,8 +26,6 @@ public partial class MonitorViewModel : ObservableObject
 
     public bool HasImage => AssignedPath is not null;
 
-    public bool ShowsLabel => Preview is null;
-
     [ObservableProperty]
     private string? assignedPath;
 
@@ -72,7 +70,6 @@ public partial class MonitorViewModel : ObservableObject
         var previous = Preview;
         Preview = bitmap;
         previous?.Dispose();
-        OnPropertyChanged(nameof(ShowsLabel));
     }
 
     public void DisposePreview()

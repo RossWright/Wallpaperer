@@ -15,22 +15,26 @@
       <Border Background="#334EA1FF"
               IsVisible="{Binding IsSelected}"
               IsHitTestVisible="False"/>
-      <StackPanel IsVisible="{Binding ShowsLabel}"
-                  HorizontalAlignment="Center"
-                  VerticalAlignment="Center"
-                  Margin="8"
-                  Spacing="2">
-        <TextBlock Text="{Binding Title}"
-                   Foreground="White"
-                   FontSize="13"
-                   TextAlignment="Center"
-                   TextWrapping="Wrap"/>
-        <TextBlock Text="{Binding Detail}"
-                   Foreground="#D5DAE3"
-                   FontSize="11"
-                   TextAlignment="Center"
-                   TextWrapping="Wrap"/>
-      </StackPanel>
+      <Border HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Margin="8"
+              Padding="8,4"
+              CornerRadius="4"
+              Background="#C0101218"
+              IsHitTestVisible="False">
+        <StackPanel Spacing="2">
+          <TextBlock Text="{Binding Title}"
+                     Foreground="White"
+                     FontSize="13"
+                     TextAlignment="Center"
+                     TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding Detail}"
+                     Foreground="#D5DAE3"
+                     FontSize="11"
+                     TextAlignment="Center"
+                     TextWrapping="Wrap"/>
+        </StackPanel>
+      </Border>
       <Button Command="{Binding ClearCommand}"
               IsVisible="{Binding HasImage}"
               HorizontalAlignment="Right"

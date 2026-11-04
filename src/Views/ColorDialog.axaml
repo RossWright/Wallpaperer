@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Wallpaperer.Views.ColorDialog"
+        Title="Clear screen"
+        Width="420"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#16181D">
+  <StackPanel Margin="20" Spacing="14">
+    <WrapPanel x:Name="Swatches" Orientation="Horizontal"/>
+    <Grid ColumnDefinitions="*,Auto" Height="220">
+      <Grid>
+        <Image x:Name="Matrix" Stretch="Fill"/>
+        <Canvas x:Name="MarkerHost" IsHitTestVisible="False">
+          <Ellipse x:Name="Marker"
+                   Width="14"
+                   Height="14"
+                   Stroke="White"
+                   StrokeThickness="2"
+                   Fill="Transparent"/>
+        </Canvas>
+      </Grid>
+      <Slider x:Name="ValueSlider"
+              Grid.Column="1"
+              Margin="16,0,0,0"
+              Width="28"
+              Minimum="0"
+              Maximum="1"
+              Orientation="Vertical"
+              IsDirectionReversed="True"/>
+    </Grid>
+    <Grid ColumnDefinitions="44,*,Auto" VerticalAlignment="Center">
+      <Border x:Name="Preview"
+              Width="36"
+              Height="36"
+              CornerRadius="6"
+              BorderBrush="#6A7382"
+              BorderThickness="1"/>
+      <TextBox x:Name="HtmlColor"
+               Grid.Column="1"
+               Margin="12,0,0,0"
+               PlaceholderText="#RRGGBB"/>
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
+        <Button Content="Cancel" MinWidth="88" Click="Cancel"/>
+        <Button Content="OK" MinWidth="88" Click="Accept"/>
+      </StackPanel>
+    </Grid>
+  </StackPanel>
+</Window>

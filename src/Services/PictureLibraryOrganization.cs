@@ -124,7 +124,8 @@ public static class PictureLibraryOrganization
         foreach (var path in newestFirst)
             byPath.TryAdd(Normalize(path), path);
 
-        bool IsPictureHidden(string path) => IsHidden(path, hiddenImages, hiddenFolders, shownImages);
+        var visibility = new PictureVisibility(hiddenImages, hiddenFolders, shownImages);
+        bool IsPictureHidden(string path) => visibility.IsHidden(path);
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var main = new List<string>();
@@ -263,5 +264,50 @@ public static class PictureLibraryOrganization
     {
         if (paths.All(item => Normalize(item) != path))
             paths.Add(path);
+    }
+}
+
+public sealed class PictureVisibility
+{
+    private readonly HashSet<string> _hiddenImages;
+    private readonly HashSet<string> _shownImages;
+    private readonly HashSet<string> _hiddenFolders;
+
+    public PictureVisibility(
+        IReadOnlyList<string> hiddenImages,
+        IReadOnlyList<string> hiddenFolders,
+        IReadOnlyList<string> shownImages)
+    {
+        _hiddenImages = hiddenImages.Select(PictureLibraryOrganization.Normalize).ToHashSet(StringComparer.Ordinal);
+        _shownImages = shownImages.Select(PictureLibraryOrganization.Normalize).ToHashSet(StringComparer.Ordinal);
+        _hiddenFolders = hiddenFolders.Select(PictureLibraryOrganization.Normalize).ToHashSet(StringComparer.Ordinal);
+    }
+
+    public bool IsHidden(string path)
+    {
+        var key = PictureLibraryOrganization.Normalize(path);
+        if (_hiddenImages.Contains(key))
+            return true;
+        if (_shownImages.Contains(key))
+            return false;
+
+        var folder = PictureLibraryOrganization.FolderOf(key);
+        while (!string.IsNullOrEmpty(folder))
+        {
+            if (_hiddenFolders.Contains(folder))
+                return true;
+
+            var parent = Path.GetDirectoryName(folder);
+            if (string.IsNullOrEmpty(parent))
+                break;
+
+            parent = PictureLibraryOrganization.Normalize(parent);
+            if (string.IsNullOrEmpty(parent) || parent == folder)
+                break;
+
+            folder = parent;
+        }
+
+        return false;
     }
 }

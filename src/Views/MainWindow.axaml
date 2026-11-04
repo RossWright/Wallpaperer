@@ -39,7 +39,7 @@
     </Grid>
 
     <Border Grid.Row="1"
-            Height="328"
+            Height="368"
             Margin="20,4,20,8"
             CornerRadius="12"
             Background="#14161B"
@@ -56,14 +56,19 @@
             BorderBrush="#66808080"
             Padding="8">
       <Grid RowDefinitions="Auto,*">
-        <ComboBox Grid.Row="0"
-                  ItemsSource="{Binding SizeFilters}"
-                  SelectedItem="{Binding SelectedSizeFilter, Mode=TwoWay}"
-                  HorizontalAlignment="Left"
-                  MinWidth="280"
-                  MaxWidth="460"
-                  Margin="0,0,0,8"
-                  ToolTip.Tip="Pictures within 12% of this resolution"/>
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+          <ComboBox ItemsSource="{Binding SizeFilters}"
+                    SelectedItem="{Binding SelectedSizeFilter, Mode=TwoWay}"
+                    MinWidth="280"
+                    MaxWidth="560"
+                    ToolTip.Tip="Pictures within 12% of this resolution"/>
+          <Button Content="Refresh"
+                  Command="{Binding RefreshPicturesCommand}"
+                  MinWidth="96"
+                  Padding="12,0"
+                  VerticalAlignment="Center"
+                  ToolTip.Tip="Scan the home folder for pictures again"/>
+        </StackPanel>
         <controls:PictureGallery Grid.Row="1"/>
       </Grid>
     </Border>

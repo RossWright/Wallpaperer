@@ -50,7 +50,7 @@ public class SizeFilterCatalogTests
         var options = SizeFilterCatalog.Build(monitors);
         var monitorsOption = Assert.Single(options, option => option.Id == SizeFilterCatalog.MonitorsId);
 
-        Assert.Equal(SizeFilterCatalog.MonitorsId, SizeFilterCatalog.DefaultId(monitors, options));
+        Assert.Equal("3840x2160", SizeFilterCatalog.DefaultId(monitors, options));
         Assert.Contains("3840×2160", monitorsOption.Label);
         Assert.Contains("1920×1080", monitorsOption.Label);
         Assert.True(monitorsOption.Matches(3840, 2160));

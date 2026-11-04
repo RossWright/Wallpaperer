@@ -162,7 +162,7 @@ public class WallpaperComposerTests
         try
         {
             var wallpaper = WriteDesk(root);
-            var white = WriteSolid(root, "white.png", SKColors.White, 8, 8);
+            var white = WriteSolid(root, "white.jpg", SKColors.White, 8, 8);
             var monitors = new[]
             {
                 Device("T", 10, 0, 10, 10),
@@ -191,6 +191,72 @@ public class WallpaperComposerTests
             AssertColor(SKColors.White, painted.GetPixel(5, 15));
             AssertColor(SKColors.White, painted.GetPixel(15, 15));
             AssertColor(SKColors.Blue, painted.GetPixel(25, 15));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_centered_logo_keeps_the_wallpaper_showing_through_transparency()
+    {
+        var root = TempDirectory();
+        try
+        {
+            var wallpaper = WriteSolid(root, "wallpaper.png", SKColors.Red, 10, 10);
+            var logo = WriteSolid(root, "logo.png", SKColors.Green, 4, 4);
+            var monitors = new[] { Device("A", 0, 0, 10, 10) };
+
+            using var centered = WallpaperComposer.Render(
+                monitors,
+                [
+                    new ImagePlacement(wallpaper, ["A"]),
+                    new ImagePlacement(logo, ["A"], Fit: ImageFit.Center),
+                ],
+                CancellationToken.None);
+            AssertColor(SKColors.Green, centered.GetPixel(4, 4));
+            AssertColor(SKColors.Red, centered.GetPixel(1, 1));
+
+            var punched = WriteLogo(root);
+            using var transparent = WallpaperComposer.Render(
+                monitors,
+                [
+                    new ImagePlacement(wallpaper, ["A"]),
+                    new ImagePlacement(punched, ["A"], Fit: ImageFit.Center),
+                ],
+                CancellationToken.None);
+            AssertColor(SKColors.Green, transparent.GetPixel(2, 5));
+            AssertColor(SKColors.Red, transparent.GetPixel(7, 5));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_scaled_preview_still_shows_a_jpeg_on_a_large_desktop()
+    {
+        var root = TempDirectory();
+        try
+        {
+            var image = WriteSolid(root, "photo.jpg", SKColors.Red, 640, 360);
+            var monitors = new[] { Device("A", 0, 0, 4000, 1000) };
+            var pngs = WallpaperComposer.PreviewPngs(
+                monitors,
+                [new ImagePlacement(image, ["A"])],
+                null,
+                1024,
+                CancellationToken.None);
+
+            Assert.True(pngs.TryGetValue("A", out var png));
+            using var bitmap = SKBitmap.Decode(png);
+            Assert.NotNull(bitmap);
+            var pixel = bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2);
+            Assert.True(pixel.Red >= 240, $"Expected a red preview, got {pixel}.");
+            Assert.True(pixel.Green <= 16, $"Expected a red preview, got {pixel}.");
+            Assert.True(pixel.Blue <= 16, $"Expected a red preview, got {pixel}.");
         }
         finally
         {
@@ -276,6 +342,23 @@ public class WallpaperComposerTests
         }
     }
 
+    private static string WriteLogo(string directory)
+    {
+        var path = Path.Combine(directory, "logo.png");
+        using var bitmap = new SKBitmap(10, 10, SKColorType.Rgba8888, SKAlphaType.Premul);
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+                bitmap.SetPixel(x, y, x < 5 ? SKColors.Green : SKColors.Transparent);
+        }
+
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        using var stream = File.Create(path);
+        data!.SaveTo(stream);
+        return path;
+    }
+
     private static string WriteSolid(string directory, string name, SKColor color, int width, int height)
     {
         var path = Path.Combine(directory, name);
@@ -283,7 +366,10 @@ public class WallpaperComposerTests
         using var canvas = new SKCanvas(bitmap);
         canvas.Clear(color);
         using var image = SKImage.FromBitmap(bitmap);
-        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        var format = path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
+            ? SKEncodedImageFormat.Jpeg
+            : SKEncodedImageFormat.Png;
+        using var data = image.Encode(format, 100);
         using var stream = File.Create(path);
         data!.SaveTo(stream);
         return path;

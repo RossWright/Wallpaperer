@@ -34,6 +34,17 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _wallpaperDirty;
     private SKBitmap? _composed;
     private string? _composedPath;
+    private SKBitmap? _replayUnder;
+    private ImagePlacement? _replay;
+    private long _replayToken;
+    private bool _composeFromReplay;
+    private long _lastPaintToken;
+    private long _nextToken;
+    private uint _backgroundColor = 0xFF000000;
+    private bool _openingFilterChosen;
+    private bool _refreshingCounts;
+    private bool _countsStale = true;
+    private int _scanGeneration;
     private readonly DebouncedAction _autoApply = new(TimeSpan.FromMilliseconds(500));
     private bool _shownCurrentWallpaper;
     private bool _showingCurrentWallpaper;
@@ -77,6 +88,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private SizeFilterOption? selectedSizeFilter;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RefreshPicturesCommand))]
+    private bool isScanningPictures;
 
     [ObservableProperty]
     private string status = "Scanning…";
@@ -150,14 +165,19 @@ public partial class MainWindowViewModel : ObservableObject
             _applyCancellation?.Cancel();
         if (!IsApplying)
         {
-            _composed?.Dispose();
+            var composed = _composed;
+            var replay = _replayUnder;
             _composed = null;
+            _replayUnder = null;
+            composed?.Dispose();
+            if (!ReferenceEquals(replay, composed))
+                replay?.Dispose();
         }
     }
 
     public void ArrangeMonitors(double panelWidth, double panelHeight)
     {
-        const double instructionBand = 48;
+        const double instructionBand = 88;
         var arranged = MonitorArrangementLayout.Arrange(
             Monitors.Select(monitor => monitor.Device).ToList(),
             panelWidth,
@@ -264,27 +284,42 @@ public partial class MainWindowViewModel : ObservableObject
 
             Status = "Composing wallpaper…";
             var devices = Monitors.Select(monitor => monitor.Device).ToList();
-            var underlay = _composed;
-            var reuse = underlay is not null && SameComposedBase();
+            var fromReplay = _composeFromReplay && _replayUnder is not null;
+            var underlay = fromReplay ? _replayUnder : (_composed is not null && SameComposedBase() ? _composed : null);
+            var lastToken = _lastPaintToken;
             var directory = WallpaperComposer.DefaultDirectory();
-            (SKBitmap Bitmap, string Path)? pending = null;
+            (SKBitmap Bitmap, string Path, SKBitmap? Under)? pending = null;
 
             try
             {
                 pending = await Task.Run(() =>
                 {
                     SKBitmap? bitmap = null;
+                    SKBitmap? replayUnder = null;
                     try
                     {
-                        if (reuse && underlay is not null)
+                        if (underlay is not null)
                             bitmap = WallpaperComposer.PaintOn(underlay, devices, baked, cancellation);
                         bitmap ??= WallpaperComposer.Render(devices, BasePlus(baked), cancellation);
+                        var last = baked.LastOrDefault(item => item.Token == lastToken);
+                        if (last is not null)
+                        {
+                            var older = baked.Where(item => item.Token != last.Token).ToArray();
+                            if (older.Length == 0 && underlay is not null && baked.Length == 1)
+                                replayUnder = underlay.Copy();
+                            else if (underlay is not null)
+                                replayUnder = WallpaperComposer.PaintOn(underlay, devices, older, cancellation);
+                            else
+                                replayUnder = WallpaperComposer.Render(devices, BasePlus(older), cancellation);
+                        }
+
                         cancellation.ThrowIfCancellationRequested();
-                        return (bitmap, WallpaperComposer.SaveJpeg(bitmap, directory));
+                        return (bitmap, WallpaperComposer.SaveJpeg(bitmap, directory), replayUnder);
                     }
                     catch
                     {
                         bitmap?.Dispose();
+                        replayUnder?.Dispose();
                         throw;
                     }
                 }, cancellation);
@@ -293,6 +328,18 @@ public partial class MainWindowViewModel : ObservableObject
                 Status = "Setting wallpaper…";
                 await _applier.ApplyAsync(pending.Value.Path, CancellationToken.None);
                 cancellation.ThrowIfCancellationRequested();
+                var lastPaint = baked.LastOrDefault(item => item.Token == lastToken);
+                if (pending.Value.Under is not null && lastPaint is not null)
+                {
+                    if (!ReferenceEquals(_replayUnder, pending.Value.Under))
+                        _replayUnder?.Dispose();
+                    _replayUnder = pending.Value.Under;
+                    _replay = lastPaint;
+                    _replayToken = lastPaint.Token;
+                    pending = (pending.Value.Bitmap, pending.Value.Path, null);
+                }
+
+                _composeFromReplay = false;
                 FoldIntoBase(pending.Value.Bitmap, pending.Value.Path, baked);
                 pending = null;
                 _wallpaperDirty = _edits.Count > 0;
@@ -302,6 +349,8 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 if (pending is not null && !ReferenceEquals(pending.Value.Bitmap, _composed))
                     pending.Value.Bitmap.Dispose();
+                if (pending?.Under is not null && !ReferenceEquals(pending.Value.Under, _replayUnder))
+                    pending.Value.Under.Dispose();
                 throw;
             }
         }
@@ -393,11 +442,25 @@ public partial class MainWindowViewModel : ObservableObject
         ApplyCommand.NotifyCanExecuteChanged();
     }
 
+    [RelayCommand(CanExecute = nameof(CanRefreshPictures))]
+    private async Task RefreshPicturesAsync()
+    {
+        _scanCancellation?.Cancel();
+        _scanCancellation = new CancellationTokenSource();
+        await ScanAsync(_scanCancellation.Token);
+    }
+
+    private bool CanRefreshPictures() => !IsScanningPictures;
+
     private async Task ScanAsync(CancellationToken cancellationToken)
     {
+        var generation = Interlocked.Increment(ref _scanGeneration);
+        IsScanningPictures = true;
+        _scanning = true;
+        Status = "Scanning…";
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var found = new List<PictureItemViewModel>();
-        var lastPublish = Stopwatch.StartNew();
+        var found = new List<PictureRecord>();
+        var lastStatus = Stopwatch.StartNew();
         try
         {
             await Task.Run(() =>
@@ -415,50 +478,70 @@ public partial class MainWindowViewModel : ObservableObject
                     }
 
                     var pixels = ImageDimensions.TryRead(path);
-                    found.Add(new PictureItemViewModel(new PictureRecord(path, written, pixels?.Width, pixels?.Height)));
-                    if (found.Count == 1 || lastPublish.ElapsedMilliseconds >= 200)
+                    found.Add(new PictureRecord(path, written, pixels?.Width, pixels?.Height));
+                    if (lastStatus.ElapsedMilliseconds < 500)
+                        continue;
+
+                    lastStatus.Restart();
+                    var count = found.Count;
+                    Dispatcher.UIThread.Post(() =>
                     {
-                        Publish(found, scanning: true);
-                        lastPublish.Restart();
-                    }
+                        if (generation == _scanGeneration && !_shuttingDown && IsScanningPictures)
+                            Status = $"Scanning… {count} images";
+                    });
                 }
             }, cancellationToken);
 
-            Publish(found, scanning: false);
+            if (generation != _scanGeneration || cancellationToken.IsCancellationRequested)
+                return;
+
+            found.Sort(static (left, right) => PictureRecord.CompareNewest(left, right));
+            var catalog = found.Select(record => new PictureItemViewModel(record)).ToArray();
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (generation != _scanGeneration || _shuttingDown)
+                    return;
+
+                foreach (var picture in _allPictures)
+                    picture.ReleaseThumbnail();
+
+                _allPictures = catalog;
+                _countsStale = true;
+                _scanning = false;
+                _hasPublished = true;
+                IsScanningPictures = false;
+                ApplyFilter();
+            });
         }
         catch (OperationCanceledException)
         {
-            // The window closed.
+            // A newer scan replaced this one, or the window closed.
         }
         catch (Exception exception)
         {
-            if (!_shuttingDown)
+            if (generation == _scanGeneration && !_shuttingDown)
+            {
+                _scanning = false;
+                IsScanningPictures = false;
                 Status = exception.Message;
+            }
         }
-    }
-
-    private void Publish(List<PictureItemViewModel> found, bool scanning)
-    {
-        var snapshot = found.ToArray();
-        Array.Sort(snapshot, static (left, right) => PictureRecord.CompareNewest(left.Record, right.Record));
-        IReadOnlyList<PictureItemViewModel> published = snapshot;
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (_shuttingDown)
-                return;
-
-            _allPictures = published;
-            _scanning = scanning;
-            _hasPublished = true;
-            ApplyFilter();
-        });
     }
 
     private void RefreshSizeFilters()
     {
         var devices = Monitors.Select(monitor => monitor.Device).ToList();
         var options = SizeFilterCatalog.Build(devices);
-        var selected = SizeFilterCatalog.Select(options, _savedFilterId, devices);
+        var opening = !_openingFilterChosen;
+        if (!opening && SameFilterIds(options, SizeFilters))
+            return;
+
+        var saved = opening ? null : _savedFilterId;
+        _openingFilterChosen = true;
+        var selected = SizeFilterCatalog.Select(options, saved, devices);
+        if (opening)
+            _savedFilterId = selected.Id;
+        _countsStale = true;
         _applyingFilterSelection = true;
         SizeFilters = options;
         SelectedSizeFilter = selected;
@@ -467,6 +550,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedSizeFilterChanged(SizeFilterOption? value)
     {
+        if (_refreshingCounts)
+            return;
+
         if (_applyingFilterSelection)
         {
             ApplyFilter();
@@ -500,7 +586,7 @@ public partial class MainWindowViewModel : ObservableObject
             _settings.ShownImages,
             picture.Path);
         _settings.Save();
-        ApplyFilter();
+        NoteLibraryChange(countsChanged: true);
     }
 
     public void MoveFolderToTop(PictureItemViewModel picture)
@@ -513,7 +599,7 @@ public partial class MainWindowViewModel : ObservableObject
             picture.Path,
             _allPictures.Select(item => item.Path));
         _settings.Save();
-        ApplyFilter();
+        NoteLibraryChange(countsChanged: true);
     }
 
     public void HideImage(PictureItemViewModel picture)
@@ -524,7 +610,7 @@ public partial class MainWindowViewModel : ObservableObject
             _settings.ShownImages,
             picture.Path);
         _settings.Save();
-        ApplyFilter();
+        NoteLibraryChange(countsChanged: true);
     }
 
     public void HideFolder(string folder)
@@ -536,7 +622,7 @@ public partial class MainWindowViewModel : ObservableObject
             _settings.ShownImages,
             folder);
         _settings.Save();
-        ApplyFilter();
+        NoteLibraryChange(countsChanged: true);
     }
 
     public void ShowImage(PictureItemViewModel picture)
@@ -547,14 +633,14 @@ public partial class MainWindowViewModel : ObservableObject
             _settings.ShownImages,
             picture.Path);
         _settings.Save();
-        ApplyFilter();
+        NoteLibraryChange(countsChanged: true);
     }
 
     public void ShowFolder(string folder)
     {
         PictureLibraryOrganization.ShowFolder(_settings.HiddenFolders, folder);
         _settings.Save();
-        ApplyFilter();
+        NoteLibraryChange(countsChanged: true);
     }
 
     public bool IsPictureHidden(string path) =>
@@ -569,10 +655,17 @@ public partial class MainWindowViewModel : ObservableObject
         ApplyFilter();
     }
 
+    private void NoteLibraryChange(bool countsChanged)
+    {
+        if (countsChanged)
+            _countsStale = true;
+        ApplyFilter();
+    }
+
     private void ApplyFilter()
     {
         var filter = SelectedSizeFilter;
-        PictureItemViewModel[] filtered = filter is null
+        var filtered = filter is null
             ? _allPictures.ToArray()
             : _allPictures.Where(picture => filter.Matches(picture.Record.PixelWidth, picture.Record.PixelHeight)).ToArray();
         var byPath = filtered.ToDictionary(picture => PictureLibraryOrganization.Normalize(picture.Path));
@@ -583,21 +676,22 @@ public partial class MainWindowViewModel : ObservableObject
             _settings.HiddenFolders,
             _settings.ShownImages,
             _showHidden);
-        Pictures = arranged.Paths.Select(path => byPath[PictureLibraryOrganization.Normalize(path)]).ToArray();
-        ShowHiddenLink = !_showHidden && arranged.HiddenCount > 0;
-        if (!_hasPublished)
+        var next = arranged.Paths.Select(path => byPath[PictureLibraryOrganization.Normalize(path)]).ToArray();
+        var showHiddenLink = !_showHidden && arranged.HiddenCount > 0;
+        if (ShowHiddenLink != showHiddenLink)
+            ShowHiddenLink = showHiddenLink;
+        if (!SamePictures(Pictures, next))
+            Pictures = next;
+
+        if (_countsStale)
+            PublishFilterCounts();
+        if (!_hasPublished || _scanning)
             return;
 
-        var total = _allPictures.Count;
-        var shown = filtered.Length;
+        var total = CountOf(SizeFilterCatalog.AnyId);
         var narrowed = filter is not null && filter.Id != SizeFilterCatalog.AnyId;
-        if (_scanning)
-        {
-            Status = narrowed ? $"Scanning… {shown} of {total} images" : $"Scanning… {total} images";
-            return;
-        }
-
-        if (total == 0)
+        var shown = narrowed ? CountOf(filter!.Id) : total;
+        if (_allPictures.Count == 0)
             Status = "No images found under the home folder.";
         else if (!narrowed)
             Status = $"{total} images";
@@ -607,6 +701,71 @@ public partial class MainWindowViewModel : ObservableObject
             Status = $"{shown} of {total} images";
     }
 
+    private int CountOf(string id)
+    {
+        var match = SizeFilters.FirstOrDefault(option => option.Id == id);
+        return match is { Count: >= 0 } ? match.Count : 0;
+    }
+
+    private static bool SamePictures(IReadOnlyList<PictureItemViewModel> current, IReadOnlyList<PictureItemViewModel> next)
+    {
+        if (current.Count != next.Count)
+            return false;
+
+        for (var index = 0; index < current.Count; index++)
+        {
+            if (!ReferenceEquals(current[index], next[index]))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool SameFilterIds(IReadOnlyList<SizeFilterOption> next, IReadOnlyList<SizeFilterOption> current)
+    {
+        if (next.Count != current.Count)
+            return false;
+
+        for (var index = 0; index < next.Count; index++)
+        {
+            if (next[index].Id != current[index].Id)
+                return false;
+        }
+
+        return true;
+    }
+
+    private void PublishFilterCounts()
+    {
+        if (!_countsStale || !_hasPublished || SizeFilters.Count == 0)
+            return;
+
+        var visibility = new PictureVisibility(_settings.HiddenImages, _settings.HiddenFolders, _settings.ShownImages);
+        var visible = new List<PictureItemViewModel>();
+        foreach (var picture in _allPictures)
+        {
+            if (!visibility.IsHidden(picture.Path))
+                visible.Add(picture);
+        }
+
+        var next = SizeFilters.Select(option => option with
+        {
+            Count = visible.Count(picture => option.Matches(picture.Record.PixelWidth, picture.Record.PixelHeight)),
+        }).ToArray();
+        _countsStale = false;
+        if (next.SequenceEqual(SizeFilters))
+            return;
+
+        var id = SelectedSizeFilter?.Id;
+        _refreshingCounts = true;
+        _applyingFilterSelection = true;
+        SizeFilters = next;
+        if (id is not null)
+            SelectedSizeFilter = next.FirstOrDefault(option => option.Id == id) ?? SelectedSizeFilter;
+        _applyingFilterSelection = false;
+        _refreshingCounts = false;
+    }
+
     private void OnMonitorChanged(MonitorViewModel monitor)
     {
         ApplyCommand.NotifyCanExecuteChanged();
@@ -614,10 +773,12 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         CancelCompose();
-        var revealed = TakeOffTop(monitor.Device.Connector);
+        TakeOffTop(monitor.Device.Connector);
+        if (_replay?.Token == _lastPaintToken && !_edits.Any(edit => edit.Token == _lastPaintToken))
+            _lastPaintToken = 0;
         _wallpaperDirty = true;
         Status = $"Cleared {monitor.Device.Connector}.";
-        _ = RevealAsync(monitor, revealed);
+        _ = RefreshCompositePreviewAsync();
         ScheduleAutoApply();
     }
 
@@ -663,7 +824,7 @@ public partial class MainWindowViewModel : ObservableObject
             await finished.Task;
         }
 
-        if (!AutoApply || _shuttingDown || (!HasAssignment() && !(_wallpaperDirty && _base.Count > 0)))
+        if (!AutoApply || _shuttingDown || (!_wallpaperDirty && !HasAssignment()))
             return;
 
         await ApplyAsync();
@@ -759,21 +920,14 @@ public partial class MainWindowViewModel : ObservableObject
     private async Task ApplyImageAsync(string path, IReadOnlyList<MonitorViewModel> targets, bool announce = true)
     {
         CancelCompose();
+        _composeFromReplay = false;
         var connectors = targets.Select(monitor => monitor.Device.Connector).ToList();
-        var layer = new ImagePlacement(path, connectors);
+        var layer = new ImagePlacement(path, connectors, Token: ++_nextToken);
         _edits.Add(layer);
-        if (!await PaintLayerAsync(layer, connectors))
-        {
-            _edits.RemoveAt(_edits.Count - 1);
-            if (announce)
-                Status = $"Could not read {path}.";
-            return;
-        }
-
-        foreach (var monitor in targets)
-            monitor.AssignedPath = path;
-
+        _lastPaintToken = layer.Token;
         _wallpaperDirty = true;
+        await RefreshCompositePreviewAsync();
+        RememberAssignment(targets, path);
         if (announce)
         {
             var file = Path.GetFileName(path);
@@ -851,85 +1005,158 @@ public partial class MainWindowViewModel : ObservableObject
     private static IReadOnlyList<string> VisibleConnectors(ImagePlacement placement) =>
         placement.Visible ?? placement.Connectors;
 
-    private async Task RevealAsync(MonitorViewModel monitor, ImagePlacement? layer)
+    public async Task ApplyScreenColorAsync(MonitorViewModel monitor, uint argb)
     {
-        if (layer is null)
+        _backgroundColor = argb;
+        CancelCompose();
+        _composeFromReplay = false;
+        var layer = new ImagePlacement(null, TargetConnectors(monitor), Color: argb | 0xFF000000, Token: ++_nextToken);
+        _edits.Add(layer);
+        _lastPaintToken = layer.Token;
+        await RefreshCompositePreviewAsync();
+        _wallpaperDirty = true;
+        Status = $"Cleared {Describe(MonitorsFor(layer.Connectors))}.";
+        ScheduleAutoApply();
+        ApplyCommand.NotifyCanExecuteChanged();
+    }
+
+    public async Task ApplyFitAsync(MonitorViewModel monitor, ImageFit fit)
+    {
+        var connectors = TargetConnectors(monitor);
+        var live = _edits.LastOrDefault(edit => edit.Token == _lastPaintToken && edit.Path is not null)
+            ?? _edits.LastOrDefault(edit =>
+                edit.Path is not null && VisibleConnectors(edit).Contains(monitor.Device.Connector, StringComparer.Ordinal));
+        var fromReplay = false;
+        ImagePlacement? source = live;
+        if (source is null && _replay is { Path: not null } replay && _replayUnder is not null)
         {
-            monitor.SetPreview(null);
+            source = replay;
+            fromReplay = true;
+        }
+
+        if (source?.Path is null)
+        {
+            Status = "Set an image on this screen first.";
             return;
         }
 
-        if (!await PaintLayerAsync(layer, [monitor.Device.Connector]))
+        CancelCompose();
+        var outside = VisibleConnectors(source)
+            .Where(connector => !connectors.Contains(connector, StringComparer.Ordinal))
+            .ToList();
+        if (fromReplay)
+        {
+            _edits.Clear();
+            _composeFromReplay = true;
+            if (outside.Count > 0)
+                _edits.Add(source with { Visible = outside, Token = 0 });
+        }
+        else
+        {
+            _edits.Remove(source);
+            if (outside.Count > 0)
+                _edits.Add(source with { Visible = outside, Token = 0 });
+        }
+
+        var updated = source with
+        {
+            Connectors = connectors,
+            Visible = null,
+            Fit = fit,
+            Token = ++_nextToken,
+        };
+        _edits.Add(updated);
+        _lastPaintToken = updated.Token;
+        if (fromReplay)
+        {
+            _replay = updated;
+            _replayToken = updated.Token;
+        }
+
+        await RefreshCompositePreviewAsync();
+        _wallpaperDirty = true;
+        Status = $"{fit} on {Describe(MonitorsFor(connectors))}.";
+        ScheduleAutoApply();
+        ApplyCommand.NotifyCanExecuteChanged();
+    }
+
+    public uint BackgroundColor => _backgroundColor;
+
+    private List<string> TargetConnectors(MonitorViewModel monitor)
+    {
+        var selected = Monitors.Where(item => item.IsSelected).Select(item => item.Device.Connector).ToList();
+        if (selected.Count > 1 && selected.Contains(monitor.Device.Connector, StringComparer.Ordinal))
+            return selected;
+
+        return [monitor.Device.Connector];
+    }
+
+    private List<MonitorViewModel> MonitorsFor(IReadOnlyList<string> connectors) =>
+        Monitors.Where(monitor => connectors.Contains(monitor.Device.Connector, StringComparer.Ordinal)).ToList();
+
+    private async Task RefreshCompositePreviewAsync()
+    {
+        if (_shuttingDown || Monitors.Count == 0)
             return;
 
-        if (_edits.Any(item => VisibleConnectors(item).Contains(monitor.Device.Connector, StringComparer.Ordinal)))
-            monitor.AssignedPath = layer.Path;
-    }
+        var devices = Devices();
+        var fromReplay = _composeFromReplay && _replayUnder is not null;
+        var placements = fromReplay ? _edits.ToArray() : BasePlus(_edits).ToArray();
+        var under = fromReplay ? _replayUnder : null;
+        if (placements.Length == 0 && under is null)
+            return;
 
-    private async Task<bool> PaintLayerAsync(ImagePlacement layer, IReadOnlyList<string> connectors)
-    {
-        var previewPath = await _thumbnails.GetJpegAsync(layer.Path, 1024, CancellationToken.None);
-        if (previewPath is null)
-            return false;
-
-        var fitted = layer.Connectors.ToList();
-        if (fitted.Count <= 1)
+        IReadOnlyDictionary<string, byte[]> pngs;
+        try
         {
-            var bitmap = OpenBitmap(previewPath);
-            if (bitmap is null)
-                return false;
-
-            var monitor = Monitors.FirstOrDefault(item => item.Device.Connector == fitted[0]);
-            if (monitor is null || !connectors.Contains(fitted[0], StringComparer.Ordinal))
-            {
-                bitmap.Dispose();
-                return false;
-            }
-
-            monitor.SetPreview(bitmap);
-            return true;
+            pngs = await Task.Run(() => WallpaperComposer.PreviewPngs(devices, placements, under, 1024, CancellationToken.None));
+        }
+        catch (Exception exception)
+        {
+            Status = exception.Message;
+            return;
         }
 
-        var pngs = await Task.Run(() => SpanPreview.PngSlices(previewPath, Devices(), fitted));
-        if (pngs is null)
-            return false;
-
-        var painted = false;
-        foreach (var connector in connectors)
+        _showingCurrentWallpaper = true;
+        try
         {
-            var index = fitted.FindIndex(item => string.Equals(item, connector, StringComparison.Ordinal));
-            if (index < 0 || index >= pngs.Length)
-                continue;
-
-            var bitmap = OpenPng(pngs[index]);
-            if (bitmap is null)
-                continue;
-
-            var monitor = Monitors.FirstOrDefault(item => item.Device.Connector == connector);
-            if (monitor is null)
+            foreach (var monitor in Monitors)
             {
-                bitmap.Dispose();
-                continue;
+                if (pngs.TryGetValue(monitor.Device.Connector, out var png))
+                {
+                    var bitmap = OpenPng(png);
+                    if (bitmap is not null)
+                        monitor.SetPreview(bitmap);
+                }
+
+                var top = LayerCovering(_edits, monitor.Device.Connector);
+                var path = top?.Path ?? (top?.Color is uint color ? $"#{color:X8}" : null);
+                if (monitor.AssignedPath != path)
+                    monitor.AssignedPath = path;
             }
-
-            monitor.SetPreview(bitmap);
-            painted = true;
         }
-
-        return painted;
+        finally
+        {
+            _showingCurrentWallpaper = false;
+        }
     }
 
-    private async Task RefreshSpanPreviewsAsync()
-    {
-        var painted = new HashSet<string>(StringComparer.Ordinal);
-        var layers = _edits.AsEnumerable().Reverse().Concat(_base.AsEnumerable().Reverse());
-        foreach (var layer in layers)
-        {
-            var pending = VisibleConnectors(layer).Where(painted.Add).ToList();
-            if (pending.Count == 0)
-                continue;
+    private async Task RefreshSpanPreviewsAsync() => await RefreshCompositePreviewAsync();
 
-            await PaintLayerAsync(layer, pending);
+    private void RememberAssignment(IReadOnlyList<MonitorViewModel> targets, string path)
+    {
+        _showingCurrentWallpaper = true;
+        try
+        {
+            foreach (var monitor in targets)
+            {
+                if (monitor.AssignedPath != path)
+                    monitor.AssignedPath = path;
+            }
+        }
+        finally
+        {
+            _showingCurrentWallpaper = false;
         }
     }
 
@@ -946,19 +1173,6 @@ public partial class MainWindowViewModel : ObservableObject
             return $"{names[0]} and {names[1]}";
 
         return string.Join(", ", names.Take(names.Count - 1)) + ", and " + names[^1];
-    }
-
-    private static Bitmap? OpenBitmap(string path)
-    {
-        try
-        {
-            using var stream = File.OpenRead(path);
-            return new Bitmap(stream);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
     }
 
     private static Bitmap? OpenPng(byte[]? png)
