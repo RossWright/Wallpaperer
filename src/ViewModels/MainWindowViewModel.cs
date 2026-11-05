@@ -19,6 +19,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly UiSettingsStore _settings;
     private readonly ICurrentWallpaperSource _wallpapers;
     private readonly IUpdateCheck _updates;
+    private readonly string _wallpaperDirectory;
     private CancellationTokenSource? _scanCancellation;
     private CancellationTokenSource? _applyCancellation;
     private int _layoutGeneration;
@@ -27,6 +28,8 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _scanning;
     private bool _hasPublished;
     private string? _savedFilterId;
+    private string? _savedAspectId;
+    private IReadOnlyList<SizeFilterOption> _allResolutions = [];
     private string? _selectionAnchor;
     private bool _loadingSettings = true;
     private readonly List<ImagePlacement> _base = [];
@@ -57,7 +60,8 @@ public partial class MainWindowViewModel : ObservableObject
         ThumbnailCache thumbnails,
         UiSettingsStore settings,
         ICurrentWallpaperSource wallpapers,
-        IUpdateCheck? updates = null)
+        IUpdateCheck? updates = null,
+        string? wallpaperDirectory = null)
     {
         _monitors = monitors;
         _applier = applier;
@@ -65,7 +69,9 @@ public partial class MainWindowViewModel : ObservableObject
         _settings = settings;
         _wallpapers = wallpapers;
         _updates = updates ?? NoUpdateCheck.Instance;
+        _wallpaperDirectory = wallpaperDirectory ?? WallpaperComposer.DefaultDirectory();
         _savedFilterId = settings.SizeFilterId;
+        _savedAspectId = settings.AspectFilterId;
         AutoApply = settings.AutoApply;
         _loadingSettings = false;
         Monitors.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasMonitors));
@@ -82,6 +88,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool showHiddenLink;
+
+    [ObservableProperty]
+    private IReadOnlyList<AspectFilterOption> aspectFilters = [];
+
+    [ObservableProperty]
+    private AspectFilterOption? selectedAspectFilter;
 
     [ObservableProperty]
     private IReadOnlyList<SizeFilterOption> sizeFilters = [];
@@ -177,17 +189,23 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void ArrangeMonitors(double panelWidth, double panelHeight)
     {
-        const double instructionBand = 88;
         var arranged = MonitorArrangementLayout.Arrange(
             Monitors.Select(monitor => monitor.Device).ToList(),
             panelWidth,
-            Math.Max(1, panelHeight - instructionBand),
+            panelHeight,
             margin: 12);
         var byConnector = arranged.ToDictionary(monitor => monitor.Connector);
         foreach (var monitor in Monitors)
         {
             if (byConnector.TryGetValue(monitor.Device.Connector, out var rect))
-                monitor.SetViewRect(rect.X, rect.Y + instructionBand, rect.Width, rect.Height);
+            {
+                const double gap = 2;
+                monitor.SetViewRect(
+                    rect.X + gap / 2,
+                    rect.Y + gap / 2,
+                    Math.Max(1, rect.Width - gap),
+                    Math.Max(1, rect.Height - gap));
+            }
         }
     }
 
@@ -276,7 +294,7 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             var baked = _edits.ToArray();
-            if (baked.Length == 0 && _composed is not null && SameComposedBase())
+            if (baked.Length == 0 && (_base.Count == 0 || (_composed is not null && SameComposedBase())))
             {
                 _wallpaperDirty = false;
                 return;
@@ -287,7 +305,7 @@ public partial class MainWindowViewModel : ObservableObject
             var fromReplay = _composeFromReplay && _replayUnder is not null;
             var underlay = fromReplay ? _replayUnder : (_composed is not null && SameComposedBase() ? _composed : null);
             var lastToken = _lastPaintToken;
-            var directory = WallpaperComposer.DefaultDirectory();
+            var directory = _wallpaperDirectory;
             (SKBitmap Bitmap, string Path, SKBitmap? Under)? pending = null;
 
             try
@@ -506,6 +524,7 @@ public partial class MainWindowViewModel : ObservableObject
                     picture.ReleaseThumbnail();
 
                 _allPictures = catalog;
+                UpdateThumbnailEmphasis();
                 _countsStale = true;
                 _scanning = false;
                 _hasPublished = true;
@@ -531,19 +550,66 @@ public partial class MainWindowViewModel : ObservableObject
     private void RefreshSizeFilters()
     {
         var devices = Monitors.Select(monitor => monitor.Device).ToList();
-        var options = SizeFilterCatalog.Build(devices);
+        var resolutions = SizeFilterCatalog.Build(devices);
+        var aspects = SizeFilterCatalog.BuildAspects(devices);
         var opening = !_openingFilterChosen;
-        if (!opening && SameFilterIds(options, SizeFilters))
+        if (!opening && SameFilterIds(resolutions, _allResolutions) && SameAspectIds(aspects, AspectFilters))
             return;
 
-        var saved = opening ? null : _savedFilterId;
+        var savedAspect = opening ? null : _savedAspectId;
+        var savedSize = opening ? null : _savedFilterId;
         _openingFilterChosen = true;
-        var selected = SizeFilterCatalog.Select(options, saved, devices);
+        var aspect = aspects.FirstOrDefault(option => option.Id == savedAspect)
+            ?? aspects.First(option => option.Id == SizeFilterCatalog.DefaultAspectId(devices, aspects));
+        var sized = SizeFilterCatalog.ForAspect(resolutions, aspect);
+        var selected = SizeFilterCatalog.Select(sized, savedSize, devices);
         if (opening)
+        {
+            _savedAspectId = aspect.Id;
             _savedFilterId = selected.Id;
+        }
+
+        _allResolutions = resolutions;
         _countsStale = true;
         _applyingFilterSelection = true;
-        SizeFilters = options;
+        AspectFilters = aspects;
+        SelectedAspectFilter = aspect;
+        SizeFilters = sized;
+        SelectedSizeFilter = selected;
+        _applyingFilterSelection = false;
+    }
+
+    partial void OnSelectedAspectFilterChanged(AspectFilterOption? value)
+    {
+        if (_refreshingCounts || _applyingFilterSelection)
+            return;
+
+        if (value is null)
+        {
+            if (AspectFilters.Count == 0)
+                return;
+
+            _applyingFilterSelection = true;
+            SelectedAspectFilter = AspectFilters.FirstOrDefault(option => option.Id == _savedAspectId) ?? AspectFilters[0];
+            _applyingFilterSelection = false;
+            return;
+        }
+
+        _savedAspectId = value.Id;
+        _settings.AspectFilterId = value.Id;
+        _settings.Save();
+        ApplyAspect(value, SelectedSizeFilter?.Id);
+    }
+
+    private void ApplyAspect(AspectFilterOption aspect, string? resolutionId)
+    {
+        var resolutions = SizeFilterCatalog.ForAspect(_allResolutions, aspect);
+        var selected = resolutions.FirstOrDefault(option => option.Id == resolutionId)
+            ?? resolutions.FirstOrDefault(option => option.Id == SizeFilterCatalog.AnyId)
+            ?? resolutions[0];
+        _countsStale = true;
+        _applyingFilterSelection = true;
+        SizeFilters = resolutions;
         SelectedSizeFilter = selected;
         _applyingFilterSelection = false;
     }
@@ -623,6 +689,7 @@ public partial class MainWindowViewModel : ObservableObject
             folder);
         _settings.Save();
         NoteLibraryChange(countsChanged: true);
+        Status = $"Hid {PictureLibraryOrganization.DisplayFolder(folder)}.";
     }
 
     public void ShowImage(PictureItemViewModel picture)
@@ -664,10 +731,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void ApplyFilter()
     {
+        var aspect = SelectedAspectFilter;
         var filter = SelectedSizeFilter;
-        var filtered = filter is null
-            ? _allPictures.ToArray()
-            : _allPictures.Where(picture => filter.Matches(picture.Record.PixelWidth, picture.Record.PixelHeight)).ToArray();
+        var filtered = _allPictures.Where(picture =>
+            (aspect is null || aspect.Matches(picture.Record.PixelWidth, picture.Record.PixelHeight))
+            && (filter is null || filter.Matches(picture.Record.PixelWidth, picture.Record.PixelHeight))).ToArray();
         var byPath = filtered.ToDictionary(picture => PictureLibraryOrganization.Normalize(picture.Path));
         var arranged = PictureLibraryOrganization.Arrange(
             filtered.Select(picture => picture.Path).ToArray(),
@@ -688,23 +756,25 @@ public partial class MainWindowViewModel : ObservableObject
         if (!_hasPublished || _scanning)
             return;
 
-        var total = CountOf(SizeFilterCatalog.AnyId);
-        var narrowed = filter is not null && filter.Id != SizeFilterCatalog.AnyId;
-        var shown = narrowed ? CountOf(filter!.Id) : total;
-        if (_allPictures.Count == 0)
-            Status = "No images found under the home folder.";
-        else if (!narrowed)
-            Status = $"{total} images";
-        else if (shown == 0)
-            Status = $"No images match {filter!.Label}.";
-        else
-            Status = $"{shown} of {total} images";
+        Status = LibraryStatus();
     }
 
-    private int CountOf(string id)
+    private string LibraryStatus()
     {
-        var match = SizeFilters.FirstOrDefault(option => option.Id == id);
-        return match is { Count: >= 0 } ? match.Count : 0;
+        if (_allPictures.Count == 0)
+            return "No images found under the home folder.";
+
+        var visibility = new PictureVisibility(_settings.HiddenImages, _settings.HiddenFolders, _settings.ShownImages);
+        var hidden = 0;
+        foreach (var picture in _allPictures)
+        {
+            if (visibility.IsHidden(picture.Path))
+                hidden++;
+        }
+
+        var shown = _allPictures.Count - hidden;
+        var images = shown == 1 ? "1 image" : $"{shown} images";
+        return hidden > 0 ? $"{images} ({hidden} hidden)" : images;
     }
 
     private static bool SamePictures(IReadOnlyList<PictureItemViewModel> current, IReadOnlyList<PictureItemViewModel> next)
@@ -735,6 +805,20 @@ public partial class MainWindowViewModel : ObservableObject
         return true;
     }
 
+    private static bool SameAspectIds(IReadOnlyList<AspectFilterOption> next, IReadOnlyList<AspectFilterOption> current)
+    {
+        if (next.Count != current.Count)
+            return false;
+
+        for (var index = 0; index < next.Count; index++)
+        {
+            if (next[index].Id != current[index].Id)
+                return false;
+        }
+
+        return true;
+    }
+
     private void PublishFilterCounts()
     {
         if (!_countsStale || !_hasPublished || SizeFilters.Count == 0)
@@ -748,20 +832,38 @@ public partial class MainWindowViewModel : ObservableObject
                 visible.Add(picture);
         }
 
-        var next = SizeFilters.Select(option => option with
+        var aspect = SelectedAspectFilter;
+        var exactAspect = ExactAspectId();
+        var exactSize = ExactResolution();
+        var aspects = AspectFilters.Select(option => option with
         {
             Count = visible.Count(picture => option.Matches(picture.Record.PixelWidth, picture.Record.PixelHeight)),
+            Exact = exactAspect is not null && option.Id == exactAspect,
         }).ToArray();
+        var resolutions = SizeFilters.Select(option => MarkResolution(option with
+        {
+            Count = visible.Count(picture =>
+                (aspect is null || aspect.Matches(picture.Record.PixelWidth, picture.Record.PixelHeight))
+                && option.Matches(picture.Record.PixelWidth, picture.Record.PixelHeight)),
+        }, exactSize)).ToArray();
         _countsStale = false;
-        if (next.SequenceEqual(SizeFilters))
+        if (aspects.SequenceEqual(AspectFilters) && resolutions.SequenceEqual(SizeFilters))
             return;
 
-        var id = SelectedSizeFilter?.Id;
+        var aspectId = SelectedAspectFilter?.Id;
+        var sizeId = SelectedSizeFilter?.Id;
         _refreshingCounts = true;
         _applyingFilterSelection = true;
-        SizeFilters = next;
-        if (id is not null)
-            SelectedSizeFilter = next.FirstOrDefault(option => option.Id == id) ?? SelectedSizeFilter;
+        if (aspects.Length > 0)
+        {
+            AspectFilters = aspects;
+            if (aspectId is not null)
+                SelectedAspectFilter = aspects.FirstOrDefault(option => option.Id == aspectId) ?? SelectedAspectFilter;
+        }
+
+        SizeFilters = resolutions;
+        if (sizeId is not null)
+            SelectedSizeFilter = resolutions.FirstOrDefault(option => option.Id == sizeId) ?? SelectedSizeFilter;
         _applyingFilterSelection = false;
         _refreshingCounts = false;
     }
@@ -843,13 +945,103 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void SyncFilterToSelection()
     {
+        UpdateThumbnailEmphasis();
         var selected = Monitors.Where(monitor => monitor.IsSelected).Select(monitor => monitor.Device).ToList();
+        if (SizeFilterCatalog.SelectionBounds(selected) is not { Width: > 0, Height: > 0 } bounds)
+        {
+            ApplyExactMarks();
+            return;
+        }
+
+        var source = _allResolutions.Count > 0 ? _allResolutions : SizeFilters;
+        var aspect = AspectFilters.FirstOrDefault(option => option.Id == SizeFilterCatalog.AspectOf(bounds.Width, bounds.Height).Id);
+        _applyingFilterSelection = true;
+        if (aspect is not null)
+        {
+            if (SelectedAspectFilter?.Id != aspect.Id)
+                SelectedAspectFilter = aspect;
+
+            var resolutions = SizeFilterCatalog.ForAspect(source, aspect);
+            if (!SameFilterIds(resolutions, SizeFilters))
+            {
+                _countsStale = true;
+                SizeFilters = resolutions;
+            }
+        }
+
         var match = SizeFilterCatalog.MatchSelection(SizeFilters, selected);
-        if (match is null || match.Id == SelectedSizeFilter?.Id)
+        if (match is not null && SelectedSizeFilter?.Id != match.Id)
+        {
+            _savedFilterId = match.Id;
+            _settings.SizeFilterId = match.Id;
+            if (aspect is not null)
+            {
+                _savedAspectId = aspect.Id;
+                _settings.AspectFilterId = aspect.Id;
+            }
+
+            _settings.Save();
+            SelectedSizeFilter = match;
+        }
+
+        ApplyExactMarks();
+        _applyingFilterSelection = false;
+        if (_countsStale)
+            ApplyFilter();
+    }
+
+    private void UpdateThumbnailEmphasis()
+    {
+        var selection = ExactResolution();
+        foreach (var picture in _allPictures)
+            picture.SetResolutionExact(selection);
+    }
+
+    private void ApplyExactMarks()
+    {
+        if (AspectFilters.Count == 0 && SizeFilters.Count == 0)
             return;
 
-        SelectedSizeFilter = match;
+        var aspectId = SelectedAspectFilter?.Id;
+        var sizeId = SelectedSizeFilter?.Id;
+        var exactAspect = ExactAspectId();
+        var exactSize = ExactResolution();
+        var aspects = AspectFilters.Select(option => option with { Exact = exactAspect is not null && option.Id == exactAspect }).ToArray();
+        var resolutions = SizeFilters.Select(option => MarkResolution(option, exactSize)).ToArray();
+        _refreshingCounts = true;
+        AspectFilters = aspects;
+        if (aspectId is not null)
+            SelectedAspectFilter = aspects.FirstOrDefault(option => option.Id == aspectId) ?? SelectedAspectFilter;
+        SizeFilters = resolutions;
+        if (sizeId is not null)
+            SelectedSizeFilter = resolutions.FirstOrDefault(option => option.Id == sizeId) ?? SelectedSizeFilter;
+        _refreshingCounts = false;
     }
+
+    private string? ExactAspectId()
+    {
+        if (ExactResolution() is not { } size)
+            return null;
+
+        var aspect = SizeFilterCatalog.AspectOf(size.Width, size.Height);
+        return aspect.Id == SizeFilterCatalog.AnyId ? null : aspect.Id;
+    }
+
+    private (int Width, int Height)? ExactResolution()
+    {
+        var selected = Monitors.Where(monitor => monitor.IsSelected).Select(monitor => monitor.Device).ToList();
+        return SizeFilterCatalog.SelectionBounds(selected);
+    }
+
+    private static SizeFilterOption MarkResolution(SizeFilterOption option, (int Width, int Height)? bounds) =>
+        option with
+        {
+            Exact = bounds is { } size
+                && option.Id is not (SizeFilterCatalog.AnyId or SizeFilterCatalog.MonitorsId)
+                && option.Bands.Count == 1
+                && option.Bands[0].Width == size.Width
+                && option.Bands[0].Height == size.Height,
+        };
 
     [RelayCommand(CanExecute = nameof(CanUpdate))]
     private async Task UpdateAsync()

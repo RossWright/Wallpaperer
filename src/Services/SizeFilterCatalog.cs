@@ -1,3 +1,4 @@
+using Avalonia.Media;
 using Wallpaperer.Models;
 
 namespace Wallpaperer.Services;
@@ -22,6 +23,12 @@ public sealed record SizeFilterOption(string Id, string Label, IReadOnlyList<Siz
 {
     public int Count { get; init; } = -1;
 
+    public bool Exact { get; init; }
+
+    public FontWeight Weight => Exact ? FontWeight.Bold : FontWeight.Normal;
+
+    public string Display => Count < 0 ? Label : $"{Label} ({Count})";
+
     public bool Matches(int? width, int? height)
     {
         if (Id == SizeFilterCatalog.AnyId)
@@ -32,7 +39,33 @@ public sealed record SizeFilterOption(string Id, string Label, IReadOnlyList<Siz
         return Bands.Any(band => band.Contains(pixelWidth, pixelHeight));
     }
 
-    public override string ToString() => Count < 0 ? Label : $"{Label} · {Count}";
+    public override string ToString() => Display;
+}
+
+public sealed record AspectFilterOption(string Id, string Label, double Ratio)
+{
+    public const double Tolerance = 0.04;
+
+    public int Count { get; init; } = -1;
+
+    public bool Exact { get; init; }
+
+    public FontWeight Weight => Exact ? FontWeight.Bold : FontWeight.Normal;
+
+    public string Display => Count < 0 ? Label : $"{Label} ({Count})";
+
+    public bool Matches(int? width, int? height)
+    {
+        if (Id == SizeFilterCatalog.AnyId)
+            return true;
+        if (width is not int pixelWidth || height is not int pixelHeight || pixelHeight <= 0 || Ratio <= 0)
+            return false;
+
+        var actual = pixelWidth / (double)pixelHeight;
+        return Math.Abs(actual - Ratio) / Ratio <= Tolerance;
+    }
+
+    public override string ToString() => Display;
 }
 
 public static class SizeFilterCatalog
@@ -40,6 +73,19 @@ public static class SizeFilterCatalog
     public const string AnyId = "any";
     public const string MonitorsId = "monitors";
     public const double Tolerance = 0.12;
+
+    private static readonly (int Width, int Height)[] KnownAspects =
+    [
+        (1, 1),
+        (5, 4),
+        (4, 3),
+        (3, 2),
+        (16, 10),
+        (16, 9),
+        (2, 1),
+        (21, 9),
+        (32, 9),
+    ];
 
     private static readonly (int Width, int Height)[] PopularResolutions =
     [
@@ -56,6 +102,16 @@ public static class SizeFilterCatalog
         (5120, 1440),
         (5120, 2160),
         (7680, 4320),
+    ];
+
+    private static readonly (int Width, int Height)[] PanelResolutions =
+    [
+        (1280, 720),
+        (1920, 1080),
+        (1920, 1200),
+        (2560, 1440),
+        (2560, 1600),
+        (3840, 2160),
     ];
 
     public static string ResolutionId(int width, int height) => $"{width}x{height}";
@@ -91,7 +147,120 @@ public static class SizeFilterCatalog
                 options.Add(span);
         }
 
+        foreach (var scaled in ScaledPanelSpans(monitors))
+        {
+            if (options.Any(option => option.Bands.Count == 1
+                    && option.Bands[0].Width == scaled.Bands[0].Width
+                    && option.Bands[0].Height == scaled.Bands[0].Height))
+                continue;
+            if (seen.Add(scaled.Id))
+                options.Add(scaled);
+        }
+
+        if (SelectionBounds(monitors) is { Width: > 0, Height: > 0 } desk)
+        {
+            var id = ResolutionId(desk.Width, desk.Height);
+            if (seen.Add(id))
+                options.Add(new SizeFilterOption(id, $"{desk.Width}×{desk.Height}", [new SizeBand(desk.Width, desk.Height)]));
+        }
+
         return options;
+    }
+
+    public static IReadOnlyList<AspectFilterOption> BuildAspects(IReadOnlyList<MonitorDevice> monitors)
+    {
+        var options = new List<AspectFilterOption> { new(AnyId, "Any", 0) };
+        var seen = new HashSet<string>(StringComparer.Ordinal) { AnyId };
+        foreach (var size in SourceSizes(monitors))
+        {
+            var aspect = AspectOf(size.Width, size.Height);
+            if (aspect.Id == AnyId || !seen.Add(aspect.Id))
+                continue;
+
+            options.Add(aspect);
+        }
+
+        var any = options[0];
+        options.RemoveAt(0);
+        options.Sort(static (left, right) => left.Ratio.CompareTo(right.Ratio));
+        options.Insert(0, any);
+        return options;
+    }
+
+    public static IReadOnlyList<SizeFilterOption> ForAspect(
+        IReadOnlyList<SizeFilterOption> options,
+        AspectFilterOption? aspect)
+    {
+        if (aspect is null || aspect.Id == AnyId)
+            return options;
+
+        var filtered = new List<SizeFilterOption>();
+        foreach (var option in options)
+        {
+            if (option.Id == AnyId)
+            {
+                filtered.Add(option);
+                continue;
+            }
+
+            if (option.Bands.Count > 0 && option.Bands.All(band => aspect.Matches(band.Width, band.Height)))
+                filtered.Add(option);
+        }
+
+        return filtered;
+    }
+
+    public static AspectFilterOption AspectOf(int width, int height)
+    {
+        if (width <= 0 || height <= 0)
+            return new(AnyId, "Any", 0);
+
+        var actual = width / (double)height;
+        (int Width, int Height)? closest = null;
+        var closestDistance = double.MaxValue;
+        foreach (var known in KnownAspects)
+        {
+            var ratio = known.Width / (double)known.Height;
+            var distance = Math.Abs(actual - ratio) / ratio;
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                closest = known;
+            }
+        }
+
+        if (closest is { } named && closestDistance <= AspectFilterOption.Tolerance)
+            return new($"{named.Width}:{named.Height}", $"{named.Width}:{named.Height}", named.Width / (double)named.Height);
+
+        var reduced = Reduce(width, height);
+        return new($"{reduced.Width}:{reduced.Height}", $"{reduced.Width}:{reduced.Height}", reduced.Width / (double)reduced.Height);
+    }
+
+    public static string DefaultAspectId(IReadOnlyList<MonitorDevice> monitors, IReadOnlyList<AspectFilterOption> options)
+    {
+        MonitorDevice? biggest = null;
+        long area = -1;
+        foreach (var monitor in monitors)
+        {
+            if (monitor.ModeWidth <= 0 || monitor.ModeHeight <= 0)
+                continue;
+
+            var pixels = (long)monitor.ModeWidth * monitor.ModeHeight;
+            if (pixels > area || (pixels == area && biggest is not null && monitor.ModeWidth > biggest.ModeWidth))
+            {
+                area = pixels;
+                biggest = monitor;
+            }
+        }
+
+        if (biggest is not null)
+        {
+            var aspect = AspectOf(biggest.ModeWidth, biggest.ModeHeight);
+            if (options.Any(option => option.Id == aspect.Id))
+                return aspect.Id;
+        }
+
+        return AnyId;
     }
 
     public static string DefaultId(IReadOnlyList<MonitorDevice> monitors, IReadOnlyList<SizeFilterOption> options)
@@ -134,12 +303,10 @@ public static class SizeFilterCatalog
         }
 
         var fallback = DefaultId(monitors, options);
-        return options.First(option => option.Id == fallback);
+        return options.FirstOrDefault(option => option.Id == fallback) ?? options[0];
     }
 
-    public static SizeFilterOption? MatchSelection(
-        IReadOnlyList<SizeFilterOption> options,
-        IReadOnlyList<MonitorDevice> selected)
+    public static (int Width, int Height)? SelectionBounds(IReadOnlyList<MonitorDevice> selected)
     {
         if (selected.Count == 0)
             return null;
@@ -152,6 +319,19 @@ public static class SizeFilterCatalog
         var height = bottom - top;
         if (width <= 0 || height <= 0)
             return null;
+
+        return (width, height);
+    }
+
+    public static SizeFilterOption? MatchSelection(
+        IReadOnlyList<SizeFilterOption> options,
+        IReadOnlyList<MonitorDevice> selected)
+    {
+        if (SelectionBounds(selected) is not { Width: > 0, Height: > 0 } bounds)
+            return null;
+
+        var width = bounds.Width;
+        var height = bounds.Height;
 
         var exact = options.FirstOrDefault(option =>
             option.Bands.Any(band => band.Width == width && band.Height == height));
@@ -185,12 +365,94 @@ public static class SizeFilterCatalog
         return closest;
     }
 
+    private static IEnumerable<(int Width, int Height)> SourceSizes(IReadOnlyList<MonitorDevice> monitors)
+    {
+        foreach (var size in PopularResolutions)
+            yield return size;
+
+        foreach (var size in DistinctMonitorSizes(monitors))
+            yield return size;
+
+        foreach (var span in SpanOptions(monitors))
+        {
+            if (span.Bands.Count == 0)
+                continue;
+
+            var band = span.Bands[0];
+            yield return (band.Width, band.Height);
+        }
+
+        if (SelectionBounds(monitors) is { Width: > 0, Height: > 0 } desk)
+            yield return (desk.Width, desk.Height);
+    }
+
+    private static (int Width, int Height) Reduce(int width, int height)
+    {
+        var divisor = Gcd(width, height);
+        return divisor <= 0 ? (width, height) : (width / divisor, height / divisor);
+    }
+
+    private static int Gcd(int left, int right)
+    {
+        while (right != 0)
+        {
+            var remainder = left % right;
+            left = right;
+            right = remainder;
+        }
+
+        return Math.Abs(left);
+    }
+
     private static List<(int Width, int Height)> DistinctMonitorSizes(IReadOnlyList<MonitorDevice> monitors) =>
         monitors
             .Where(monitor => monitor.ModeWidth > 0 && monitor.ModeHeight > 0)
             .Select(monitor => (monitor.ModeWidth, monitor.ModeHeight))
             .Distinct()
             .ToList();
+
+    private static IEnumerable<SizeFilterOption> ScaledPanelSpans(IReadOnlyList<MonitorDevice> monitors)
+    {
+        var shapes = new HashSet<(int Count, bool Wide)>();
+        foreach (var span in SpanOptions(monitors))
+        {
+            if (SpanShape(span.Id) is { } shape)
+                shapes.Add(shape);
+        }
+
+        var monitorAspects = DistinctMonitorSizes(monitors)
+            .Select(size => AspectOf(size.Width, size.Height).Id)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var (count, wide) in shapes)
+        {
+            foreach (var panel in PanelResolutions)
+            {
+                if (!monitorAspects.Contains(AspectOf(panel.Width, panel.Height).Id))
+                    continue;
+
+                var width = wide ? panel.Width * count : panel.Width;
+                var height = wide ? panel.Height : panel.Height * count;
+                yield return new SizeFilterOption(
+                    ResolutionId(width, height),
+                    $"{width}×{height}",
+                    [new SizeBand(width, height)]);
+            }
+        }
+    }
+
+    private static (int Count, bool Wide)? SpanShape(string id)
+    {
+        var parts = id.Split('-');
+        if (parts.Length < 2 || !int.TryParse(parts[0], out var count))
+            return null;
+
+        return parts[1] switch
+        {
+            "wide" => (count, true),
+            "tall" => (count, false),
+            _ => null,
+        };
+    }
 
     private static IEnumerable<SizeFilterOption> SpanOptions(IReadOnlyList<MonitorDevice> monitors)
     {
@@ -253,10 +515,7 @@ public static class SizeFilterCatalog
             if (!yielded.Add(id))
                 continue;
 
-            var label = length == 2
-                ? $"{width}×{height} · 2 monitors {(wide ? "wide" : "tall")}"
-                : $"{width}×{height} · 3 monitors wide";
-            yield return new SizeFilterOption(id, label, [new SizeBand(width, height)]);
+            yield return new SizeFilterOption(id, $"{width}×{height}", [new SizeBand(width, height)]);
         }
     }
 

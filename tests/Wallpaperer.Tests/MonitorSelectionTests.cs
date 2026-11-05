@@ -48,7 +48,8 @@ public class MonitorSelectionTests
                 new GnomeWallpaperApplier(new IdleProcessRunner()),
                 new ThumbnailCache(directory),
                 new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null),
-                EmptyCurrentWallpaperSource.Instance);
+                EmptyCurrentWallpaperSource.Instance,
+                wallpaperDirectory: directory);
             foreach (var device in Desk())
                 viewModel.Monitors.Add(new MonitorViewModel(device, _ => { }));
 
@@ -100,7 +101,8 @@ public class MonitorSelectionTests
                 new GnomeWallpaperApplier(new IdleProcessRunner()),
                 new ThumbnailCache(directory),
                 new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null),
-                EmptyCurrentWallpaperSource.Instance);
+                EmptyCurrentWallpaperSource.Instance,
+                wallpaperDirectory: directory);
             var monitor = new MonitorViewModel(new MonitorDevice("DP-3", "DP-3", 0, 0, 100, 100, 1, true, 100, 100), _ => { });
             viewModel.Monitors.Add(monitor);
             monitor.AssignedPath = Path.Combine(directory, "missing.jpg");
@@ -108,6 +110,7 @@ public class MonitorSelectionTests
             Assert.True(viewModel.ApplyCommand.CanExecute(null));
             viewModel.AutoApply = true;
             Assert.False(viewModel.ApplyCommand.CanExecute(null));
+            viewModel.Shutdown();
         }
         finally
         {
@@ -127,7 +130,8 @@ public class MonitorSelectionTests
                 new GnomeWallpaperApplier(new IdleProcessRunner()),
                 new ThumbnailCache(directory),
                 new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null),
-                EmptyCurrentWallpaperSource.Instance);
+                EmptyCurrentWallpaperSource.Instance,
+                wallpaperDirectory: directory);
             var desk = Desk();
             foreach (var device in desk)
                 viewModel.Monitors.Add(new MonitorViewModel(device, _ => { }));
@@ -138,7 +142,7 @@ public class MonitorSelectionTests
             viewModel.ExtendSelection("DP-5");
 
             Assert.Equal(4, viewModel.Monitors.Count(monitor => monitor.IsSelected));
-            Assert.Equal("3440x1440", viewModel.SelectedSizeFilter?.Id);
+            Assert.Equal("11520x4320", viewModel.SelectedSizeFilter?.Id);
         }
         finally
         {
@@ -158,7 +162,8 @@ public class MonitorSelectionTests
                 new GnomeWallpaperApplier(new IdleProcessRunner()),
                 new ThumbnailCache(directory),
                 new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null),
-                EmptyCurrentWallpaperSource.Instance);
+                EmptyCurrentWallpaperSource.Instance,
+                wallpaperDirectory: directory);
             foreach (var device in Desk())
                 viewModel.Monitors.Add(new MonitorViewModel(device, _ => { }));
 
@@ -193,7 +198,8 @@ public class MonitorSelectionTests
                 new ThumbnailCache(directory),
                 new UiSettingsStore(Path.Combine(directory, "ui-settings.json"), null),
                 EmptyCurrentWallpaperSource.Instance,
-                updates);
+                updates,
+                directory);
 
             Assert.False(viewModel.UpdateAvailable);
             await viewModel.CheckForUpdateAsync();

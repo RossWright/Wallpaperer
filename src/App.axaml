@@ -9,7 +9,8 @@
         <Style Selector="ContextMenu ScrollViewer">
             <Setter Property="Template">
                 <ControlTemplate>
-                    <ScrollContentPresenter Name="PART_ScrollContentPresenter"
+                    <ScrollContentPresenter Name="PART_ContentPresenter"
+                                            Content="{TemplateBinding Content}"
                                             Padding="{TemplateBinding Padding}"/>
                 </ControlTemplate>
             </Setter>
@@ -17,7 +18,8 @@
         <Style Selector="MenuItem Popup ScrollViewer">
             <Setter Property="Template">
                 <ControlTemplate>
-                    <ScrollContentPresenter Name="PART_ScrollContentPresenter"
+                    <ScrollContentPresenter Name="PART_ContentPresenter"
+                                            Content="{TemplateBinding Content}"
                                             Padding="{TemplateBinding Padding}"/>
                 </ControlTemplate>
             </Setter>

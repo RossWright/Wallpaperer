@@ -28,9 +28,9 @@ public class SizeFilterCatalogTests
 
         Assert.Equal(SizeFilterCatalog.AnyId, options[0].Id);
         Assert.Contains(options, option => option.Id == "3840x2160" && option.Label == "3840×2160");
-        Assert.Contains(options, option => option.Label == "7680×2160 · 2 monitors wide");
-        Assert.Contains(options, option => option.Label == "3840×4320 · 2 monitors tall");
-        Assert.Contains(options, option => option.Label == "11520×2160 · 3 monitors wide");
+        Assert.Contains(options, option => option.Id == "2-wide-7680x2160" && option.Label == "7680×2160");
+        Assert.Contains(options, option => option.Id == "2-tall-3840x4320" && option.Label == "3840×4320");
+        Assert.Contains(options, option => option.Id == "3-wide-11520x2160" && option.Label == "11520×2160");
         Assert.Equal(3, options.Count(option => option.Id.Contains("-wide-") || option.Id.Contains("-tall-")));
         Assert.DoesNotContain(options, option => option.Id.Contains("4-wide") || option.Id.Contains("3-tall"));
         Assert.Equal("3840x2160", SizeFilterCatalog.DefaultId(monitors, options));
@@ -66,8 +66,54 @@ public class SizeFilterCatalogTests
 
         Assert.Equal("3840x2160", SizeFilterCatalog.MatchSelection(options, [monitors[2]])?.Id);
         Assert.Equal("2-wide-7680x2160", SizeFilterCatalog.MatchSelection(options, [monitors[1], monitors[2]])?.Id);
-        Assert.Equal("3440x1440", SizeFilterCatalog.MatchSelection(options, monitors)?.Id);
+        Assert.Equal("11520x4320", SizeFilterCatalog.MatchSelection(options, monitors)?.Id);
         Assert.Null(SizeFilterCatalog.MatchSelection(options, []));
+    }
+
+    [Fact]
+    public void Aspect_ratio_groups_a_monitor_and_its_span_and_keeps_other_sizes_for_scaling()
+    {
+        var monitors = Desk();
+        var aspects = SizeFilterCatalog.BuildAspects(monitors);
+        var resolutions = SizeFilterCatalog.Build(monitors);
+
+        Assert.Equal("16:9", SizeFilterCatalog.AspectOf(3840, 2160).Id);
+        Assert.Equal("32:9", SizeFilterCatalog.AspectOf(7680, 2160).Id);
+        Assert.Equal("21:9", SizeFilterCatalog.AspectOf(3440, 1440).Id);
+        Assert.Equal("16:10", SizeFilterCatalog.AspectOf(1920, 1200).Id);
+        Assert.Equal("16:3", SizeFilterCatalog.AspectOf(11520, 2160).Id);
+        Assert.Contains(aspects, option => option.Id == "16:9");
+        Assert.Contains(aspects, option => option.Id == "32:9");
+        Assert.Equal("16:9", SizeFilterCatalog.DefaultAspectId(monitors, aspects));
+
+        var widescreen = aspects.Single(option => option.Id == "16:9");
+        Assert.True(widescreen.Matches(4000, 2250));
+        Assert.False(widescreen.Matches(1920, 1200));
+        var sized = SizeFilterCatalog.ForAspect(resolutions, widescreen);
+        Assert.Contains(sized, option => option.Id == SizeFilterCatalog.AnyId);
+        Assert.Contains(sized, option => option.Id == "1920x1080");
+        Assert.Contains(sized, option => option.Id == "3840x2160");
+        Assert.DoesNotContain(sized, option => option.Id == "2-wide-7680x2160");
+        Assert.DoesNotContain(sized, option => option.Id == "1920x1200");
+        Assert.DoesNotContain(sized, option => option.Id == "5760x1080");
+    }
+
+    [Fact]
+    public void A_three_wide_row_also_offers_three_1080p_screens()
+    {
+        var options = SizeFilterCatalog.Build(Desk());
+        var screens = Assert.Single(options, option => option.Id == "5760x1080");
+
+        Assert.Equal("5760×1080", screens.Label);
+        Assert.True(screens.Matches(5760, 1080));
+        Assert.Contains(options, option => option.Id == "3840x1080");
+        Assert.DoesNotContain(options, option => option.Id == "11520x2160");
+
+        var spanned = SizeFilterCatalog.AspectOf(11520, 2160);
+        var sized = SizeFilterCatalog.ForAspect(options, spanned);
+        Assert.Contains(sized, option => option.Id == "5760x1080");
+        Assert.Contains(sized, option => option.Id == "3-wide-11520x2160");
+        Assert.DoesNotContain(sized, option => option.Id == "3840x1080");
     }
 
     [Fact]

@@ -30,6 +30,8 @@ public partial class MonitorTile : UserControl
         menu.Items.Add(clear);
         menu.Items.Add(fit);
         ContextMenu = menu;
+        PointerEntered += (_, _) => Label.IsVisible = true;
+        PointerExited += (_, _) => Label.IsVisible = false;
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);

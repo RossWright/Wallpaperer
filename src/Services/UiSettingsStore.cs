@@ -16,10 +16,12 @@ public sealed class UiSettingsStore
         IReadOnlyList<LibraryPin>? pins = null,
         IReadOnlyList<string>? hiddenImages = null,
         IReadOnlyList<string>? hiddenFolders = null,
-        IReadOnlyList<string>? shownImages = null)
+        IReadOnlyList<string>? shownImages = null,
+        string? aspectFilterId = null)
     {
         _path = path;
         SizeFilterId = sizeFilterId;
+        AspectFilterId = aspectFilterId;
         AutoApply = autoApply;
         Pins = pins?.ToList() ?? [];
         HiddenImages = hiddenImages?.ToList() ?? [];
@@ -28,6 +30,8 @@ public sealed class UiSettingsStore
     }
 
     public string? SizeFilterId { get; set; }
+
+    public string? AspectFilterId { get; set; }
 
     public bool AutoApply { get; set; }
 
@@ -60,7 +64,8 @@ public sealed class UiSettingsStore
                 file?.Pins,
                 file?.HiddenImages,
                 file?.HiddenFolders,
-                file?.ShownImages);
+                file?.ShownImages,
+                file?.AspectFilterId);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -77,7 +82,7 @@ public sealed class UiSettingsStore
                 Directory.CreateDirectory(directory);
 
             var json = JsonSerializer.Serialize(
-                new SettingsFile(SizeFilterId, AutoApply, Pins, HiddenImages, HiddenFolders, ShownImages),
+                new SettingsFile(SizeFilterId, AutoApply, Pins, HiddenImages, HiddenFolders, ShownImages, AspectFilterId),
                 JsonOptions);
             File.WriteAllText(_path, json);
         }
@@ -93,5 +98,6 @@ public sealed class UiSettingsStore
         [property: JsonPropertyName("pins")] List<LibraryPin>? Pins = null,
         [property: JsonPropertyName("hiddenImages")] List<string>? HiddenImages = null,
         [property: JsonPropertyName("hiddenFolders")] List<string>? HiddenFolders = null,
-        [property: JsonPropertyName("shownImages")] List<string>? ShownImages = null);
+        [property: JsonPropertyName("shownImages")] List<string>? ShownImages = null,
+        [property: JsonPropertyName("aspectFilterId")] string? AspectFilterId = null);
 }

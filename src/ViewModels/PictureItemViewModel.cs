@@ -1,3 +1,4 @@
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -13,6 +14,9 @@ public partial class PictureItemViewModel : ObservableObject
     public PictureItemViewModel(PictureRecord record)
     {
         Record = record;
+        ResolutionLabel = record.PixelWidth is int width && record.PixelHeight is int height && width > 0 && height > 0
+            ? $"{width}×{height}"
+            : "";
     }
 
     public PictureRecord Record { get; }
@@ -24,6 +28,25 @@ public partial class PictureItemViewModel : ObservableObject
     public string FolderName => System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(Record.Path) ?? "");
 
     public string Tooltip => Path;
+
+    public string ResolutionLabel { get; }
+
+    public bool HasResolution => ResolutionLabel.Length > 0;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResolutionWeight))]
+    private bool resolutionIsExact;
+
+    public FontWeight ResolutionWeight => ResolutionIsExact ? FontWeight.Bold : FontWeight.Normal;
+
+    public void SetResolutionExact((int Width, int Height)? selection)
+    {
+        var exact = selection is { } size
+            && Record.PixelWidth == size.Width
+            && Record.PixelHeight == size.Height;
+        if (ResolutionIsExact != exact)
+            ResolutionIsExact = exact;
+    }
 
     [ObservableProperty]
     private Bitmap? thumbnail;

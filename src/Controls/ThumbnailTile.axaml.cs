@@ -132,16 +132,25 @@ public partial class ThumbnailTile : UserControl
         menu.Items.Add(CommandItem("move folder to top", () => viewModel?.MoveFolderToTop(picture)));
         menu.Items.Add(CommandItem("hide this image", () => viewModel?.HideImage(picture)));
 
-        var hideFolder = new MenuItem { Header = "hide folder" };
-        foreach (var folder in PictureLibraryOrganization.AncestorFolders(picture.Path))
+        var folders = PictureLibraryOrganization.AncestorFolders(picture.Path);
+        if (folders.Count > 0)
         {
-            var chosen = folder;
-            hideFolder.Items.Add(CommandItem(
-                PictureLibraryOrganization.DisplayFolder(chosen),
-                () => viewModel?.HideFolder(chosen)));
-        }
+            var immediate = folders[0];
+            menu.Items.Add(CommandItem("hide this folder", () => viewModel?.HideFolder(immediate)));
+            if (folders.Count > 1)
+            {
+                var hideParent = new MenuItem { Header = "hide a parent folder" };
+                foreach (var folder in folders.Skip(1))
+                {
+                    var chosen = folder;
+                    hideParent.Items.Add(CommandItem(
+                        PictureLibraryOrganization.DisplayFolder(chosen),
+                        () => viewModel?.HideFolder(chosen)));
+                }
 
-        menu.Items.Add(hideFolder);
+                menu.Items.Add(hideParent);
+            }
+        }
         if (viewModel is null || !viewModel.IsPictureHidden(picture.Path))
             return;
 

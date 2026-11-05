@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="using:Wallpaperer.Controls"
+        xmlns:services="using:Wallpaperer.Services"
         xmlns:vm="using:Wallpaperer.ViewModels"
         x:Class="Wallpaperer.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -11,36 +12,10 @@
         MinWidth="860"
         MinHeight="640"
         WindowStartupLocation="CenterScreen">
-  <Grid RowDefinitions="Auto,Auto,*,Auto">
-    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="20,16,20,8">
-      <TextBlock Text="Wallpaperer"
-                 FontSize="22"
-                 FontWeight="SemiBold"
-                 VerticalAlignment="Center"
-                 TextTrimming="CharacterEllipsis"/>
-      <StackPanel Grid.Column="1"
-                  Orientation="Horizontal"
-                  Spacing="14"
-                  VerticalAlignment="Center">
-        <Button Content="Apply"
-                Command="{Binding ApplyCommand}"
-                IsVisible="{Binding !AutoApply}"
-                MinWidth="112"
-                Height="36"
-                HorizontalContentAlignment="Center"
-                VerticalContentAlignment="Center"/>
-        <ToggleSwitch Content="Auto-apply"
-                      IsChecked="{Binding AutoApply, Mode=TwoWay}"
-                      OnContent="On"
-                      OffContent="Off"
-                      VerticalAlignment="Center"
-                      ToolTip.Tip="Apply the wallpaper you are editing about half a second after each change"/>
-      </StackPanel>
-    </Grid>
-
-    <Border Grid.Row="1"
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Grid.Row="0"
             Height="368"
-            Margin="20,4,20,8"
+            Margin="20,16,20,8"
             CornerRadius="12"
             Background="#14161B"
             BorderBrush="#3A4150"
@@ -49,31 +24,107 @@
       <controls:MonitorArrangement/>
     </Border>
 
-    <Border Grid.Row="2"
+    <Border Grid.Row="1"
             Margin="20,0,20,8"
             CornerRadius="12"
             BorderThickness="1"
             BorderBrush="#66808080"
             Padding="8">
       <Grid RowDefinitions="Auto,*">
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Width="36"
+                  Height="36"
+                  Padding="0"
+                  VerticalAlignment="Center"
+                  Background="Transparent"
+                  BorderBrush="#8A93A3"
+                  BorderThickness="1"
+                  CornerRadius="18"
+                  Cursor="Help">
+            <Grid Width="18" Height="18">
+              <Ellipse Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.4"/>
+              <TextBlock Text="i"
+                         FontSize="13"
+                         FontStyle="Italic"
+                         FontWeight="SemiBold"
+                         Foreground="{Binding $parent[Button].Foreground}"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center"
+                         Margin="0,0,0,1"/>
+            </Grid>
+            <Button.Flyout>
+              <Flyout Placement="BottomEdgeAlignedLeft">
+                <StackPanel Spacing="8" MaxWidth="440" Margin="12">
+                  <TextBlock FontSize="16" Text="Click a screen to select it."/>
+                  <TextBlock FontSize="16" Text="Click and drag to select a span of screens."/>
+                  <TextBlock FontSize="16" Text="Hold Ctrl or Shift and click to select a span."/>
+                  <TextBlock FontSize="16" Text="Then click an image below to set the wallpaper."/>
+                  <TextBlock FontSize="16" Text="You can also drag an image from Files onto a screen."/>
+                </StackPanel>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+          <ComboBox ItemsSource="{Binding AspectFilters}"
+                    SelectedItem="{Binding SelectedAspectFilter, Mode=TwoWay}"
+                    MinWidth="140"
+                    MaxWidth="220"
+                    ToolTip.Tip="Aspect ratio. The ratio of the selected screens is bold.">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="services:AspectFilterOption">
+                <TextBlock Text="{Binding Display}" FontWeight="{Binding Weight}"/>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
           <ComboBox ItemsSource="{Binding SizeFilters}"
                     SelectedItem="{Binding SelectedSizeFilter, Mode=TwoWay}"
-                    MinWidth="280"
-                    MaxWidth="560"
-                    ToolTip.Tip="Pictures within 12% of this resolution"/>
-          <Button Content="Refresh"
-                  Command="{Binding RefreshPicturesCommand}"
-                  MinWidth="96"
-                  Padding="12,0"
+                    MinWidth="240"
+                    MaxWidth="420"
+                    ToolTip.Tip="Resolution. Any shows every size of the selected aspect ratio. The size of the selected screens is bold.">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="services:SizeFilterOption">
+                <TextBlock Text="{Binding Display}" FontWeight="{Binding Weight}"/>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Command="{Binding RefreshPicturesCommand}"
+                  Width="36"
+                  Height="36"
+                  Padding="7"
                   VerticalAlignment="Center"
-                  ToolTip.Tip="Scan the home folder for pictures again"/>
-        </StackPanel>
+                  ToolTip.Tip="Scan the home folder for pictures again">
+            <Path Stretch="Uniform"
+                  Fill="{Binding $parent[Button].Foreground}"
+                  Data="M17.65,6.35 C16.2,4.9 14.21,4 12,4 C7.58,4 4.01,7.58 4.01,12 C4.01,16.42 7.57,20 12,20 C15.73,20 18.84,17.45 19.73,14 L17.65,14 C16.83,16.33 14.61,18 12,18 C8.69,18 6,15.31 6,12 C6,8.69 8.69,6 12,6 C13.66,6 15.14,6.69 16.22,7.78 L13,11 L20,11 L20,4 Z"/>
+          </Button>
+          </StackPanel>
+          <StackPanel Grid.Column="2"
+                      Orientation="Horizontal"
+                      Spacing="12"
+                      VerticalAlignment="Center">
+            <Button Content="Apply"
+                    Command="{Binding ApplyCommand}"
+                    IsVisible="{Binding !AutoApply}"
+                    MinWidth="96"
+                    Height="36"
+                    VerticalAlignment="Center"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <TextBlock Text="Auto-apply" VerticalAlignment="Center"/>
+              <ToggleSwitch IsChecked="{Binding AutoApply, Mode=TwoWay}"
+                            OnContent="On"
+                            OffContent="Off"
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Apply the wallpaper you are editing about half a second after each change"/>
+            </StackPanel>
+          </StackPanel>
+        </Grid>
         <controls:PictureGallery Grid.Row="1"/>
       </Grid>
     </Border>
 
-    <Grid Grid.Row="3" Margin="20,4,20,14" ColumnDefinitions="*,Auto">
+    <Grid Grid.Row="2" Margin="20,4,20,14" ColumnDefinitions="*,Auto">
       <StackPanel Spacing="2" VerticalAlignment="Center">
         <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
         <TextBlock Text="{Binding LayoutWarning}"

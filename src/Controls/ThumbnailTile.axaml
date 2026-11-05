@@ -10,6 +10,22 @@
           BorderThickness="1"
           CornerRadius="8"
           ClipToBounds="True">
-    <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>
+    <Grid>
+      <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>
+      <Border VerticalAlignment="Bottom"
+              HorizontalAlignment="Center"
+              Margin="4,0,4,4"
+              Padding="6,1"
+              CornerRadius="3"
+              Background="#C0101218"
+              IsVisible="{Binding HasResolution}"
+              IsHitTestVisible="False">
+        <TextBlock Text="{Binding ResolutionLabel}"
+                   FontSize="11"
+                   Foreground="White"
+                   FontWeight="{Binding ResolutionWeight}"
+                   TextAlignment="Center"/>
+      </Border>
+    </Grid>
   </Border>
 </UserControl>

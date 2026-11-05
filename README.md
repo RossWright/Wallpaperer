@@ -1,6 +1,6 @@
 # Wallpaperer
 
-Version 0.1.1. Copyright © 2026 Pross Co.
+Version 1.0.0. Copyright © 2026 Pross Co.
 
 Wallpaperer shows your monitors, lets you place a picture on each one, and applies them as a single spanned wallpaper on GNOME.
 

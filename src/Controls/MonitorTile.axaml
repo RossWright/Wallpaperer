@@ -15,12 +15,14 @@
       <Border Background="#334EA1FF"
               IsVisible="{Binding IsSelected}"
               IsHitTestVisible="False"/>
-      <Border HorizontalAlignment="Center"
+      <Border x:Name="Label"
+              HorizontalAlignment="Center"
               VerticalAlignment="Center"
               Margin="8"
               Padding="8,4"
               CornerRadius="4"
               Background="#C0101218"
+              IsVisible="False"
               IsHitTestVisible="False">
         <StackPanel Spacing="2">
           <TextBlock Text="{Binding Title}"
