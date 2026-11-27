@@ -216,6 +216,22 @@ public class MonitorSelectionTests
     }
 
     [Fact]
+    public void A_bottom_row_that_clips_the_top_screen_leaves_the_top_screen_out()
+    {
+        var monitors = new List<MonitorDevice>
+        {
+            Device("HDMI-1", 3840, 0, 3840, 2160),
+            Device("DP-3", 3840, 2160, 3840, 2160),
+            Device("DP-2", 0, 2135, 3840, 2160),
+            Device("DP-1", 7680, 2135, 3840, 2160),
+        };
+
+        var filled = MonitorSelection.Fill(monitors, ["DP-2", "DP-1"]);
+
+        Assert.Equal(["DP-3", "DP-2", "DP-1"], filled);
+    }
+
+    [Fact]
     public void A_monitor_outside_the_box_stays_out()
     {
         var monitors = Desk().ToList();

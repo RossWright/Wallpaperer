@@ -15,15 +15,15 @@ public static class MonitorSelection
         var right = chosen.Max(monitor => monitor.X + monitor.Width);
         var bottom = chosen.Max(monitor => monitor.Y + monitor.Height);
         return monitors
-            .Where(monitor => Overlaps(monitor, left, top, right, bottom))
+            .Where(monitor => CenterIsInside(monitor, left, top, right, bottom))
             .Select(monitor => monitor.Connector)
             .ToList();
     }
 
-    private static bool Overlaps(MonitorDevice monitor, int left, int top, int right, int bottom)
+    private static bool CenterIsInside(MonitorDevice monitor, int left, int top, int right, int bottom)
     {
-        var width = Math.Min(monitor.X + monitor.Width, right) - Math.Max(monitor.X, left);
-        var height = Math.Min(monitor.Y + monitor.Height, bottom) - Math.Max(monitor.Y, top);
-        return width > 0 && height > 0;
+        var centerX = monitor.X + monitor.Width / 2.0;
+        var centerY = monitor.Y + monitor.Height / 2.0;
+        return centerX >= left && centerX <= right && centerY >= top && centerY <= bottom;
     }
 }

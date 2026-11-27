@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 DEB_ARCH="amd64"
 APPIMAGE_ARCH="x86_64"
 

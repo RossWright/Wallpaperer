@@ -61,6 +61,7 @@
                   <TextBlock FontSize="16" Text="Hold Ctrl or Shift and click to select a span."/>
                   <TextBlock FontSize="16" Text="Then click an image below to set the wallpaper."/>
                   <TextBlock FontSize="16" Text="You can also drag an image from Files onto a screen."/>
+                  <TextBlock FontSize="16" Text="Preview hides every window until you press a key or click."/>
                 </StackPanel>
               </Flyout>
             </Button.Flyout>
@@ -102,6 +103,14 @@
                       Orientation="Horizontal"
                       Spacing="12"
                       VerticalAlignment="Center">
+            <Button Content="Preview"
+                    Command="{Binding PreviewCommand}"
+                    MinWidth="96"
+                    Height="36"
+                    VerticalAlignment="Center"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    ToolTip.Tip="Hide every window so you can see the wallpaper. Press a key or click to bring the windows back."/>
             <Button Content="Apply"
                     Command="{Binding ApplyCommand}"
                     IsVisible="{Binding !AutoApply}"

@@ -18,7 +18,8 @@ public partial class MainWindow : Window
             new ThumbnailCache(ThumbnailCache.DefaultDirectory()),
             UiSettingsStore.Load(UiSettingsStore.DefaultPath()),
             new GnomeCurrentWallpaperSource(processes),
-            new VelopackUpdateCheck());
+            new VelopackUpdateCheck(),
+            preview: new GnomeDesktopPreview(processes));
     }
 
     protected override void OnOpened(EventArgs e)

@@ -19,7 +19,9 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly UiSettingsStore _settings;
     private readonly ICurrentWallpaperSource _wallpapers;
     private readonly IUpdateCheck _updates;
+    private readonly IDesktopPreview _preview;
     private readonly string _wallpaperDirectory;
+    private CancellationTokenSource? _previewCancellation;
     private CancellationTokenSource? _scanCancellation;
     private CancellationTokenSource? _applyCancellation;
     private int _layoutGeneration;
@@ -61,7 +63,8 @@ public partial class MainWindowViewModel : ObservableObject
         UiSettingsStore settings,
         ICurrentWallpaperSource wallpapers,
         IUpdateCheck? updates = null,
-        string? wallpaperDirectory = null)
+        string? wallpaperDirectory = null,
+        IDesktopPreview? preview = null)
     {
         _monitors = monitors;
         _applier = applier;
@@ -69,6 +72,7 @@ public partial class MainWindowViewModel : ObservableObject
         _settings = settings;
         _wallpapers = wallpapers;
         _updates = updates ?? NoUpdateCheck.Instance;
+        _preview = preview ?? new UnavailableDesktopPreview();
         _wallpaperDirectory = wallpaperDirectory ?? WallpaperComposer.DefaultDirectory();
         _savedFilterId = settings.SizeFilterId;
         _savedAspectId = settings.AspectFilterId;
@@ -116,7 +120,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ApplyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PreviewCommand))]
     private bool isApplying;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ApplyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PreviewCommand))]
+    private bool isPreviewing;
 
     [ObservableProperty]
     private bool isSettingWallpaper;
@@ -172,6 +182,9 @@ public partial class MainWindowViewModel : ObservableObject
     {
         _shuttingDown = true;
         _autoApply.Cancel();
+        _previewCancellation?.Cancel();
+        if (IsPreviewing)
+            _ = _preview.RestoreAsync();
         _scanCancellation?.Cancel();
         if (!IsSettingWallpaper)
             _applyCancellation?.Cancel();
@@ -392,7 +405,75 @@ public partial class MainWindowViewModel : ObservableObject
     private bool HasAssignment() => Monitors.Any(monitor => monitor.HasImage);
 
     private bool CanApply() =>
-        !AutoApply && !IsApplying && (HasAssignment() || (_wallpaperDirty && _base.Count > 0));
+        !AutoApply && !IsApplying && !IsPreviewing && (HasAssignment() || (_wallpaperDirty && _base.Count > 0));
+
+    [RelayCommand(CanExecute = nameof(CanPreview))]
+    private async Task PreviewAsync()
+    {
+        if (_shuttingDown)
+            return;
+
+        _previewCancellation?.Cancel();
+        _previewCancellation = new CancellationTokenSource();
+        var cancellation = _previewCancellation.Token;
+        IsPreviewing = true;
+        _autoApply.Cancel();
+        try
+        {
+            await WaitUntilAppliedAsync();
+            if (_shuttingDown || cancellation.IsCancellationRequested)
+                return;
+
+            if (_wallpaperDirty || _edits.Count > 0)
+                await ApplyAsync();
+
+            if (_shuttingDown || cancellation.IsCancellationRequested || _wallpaperDirty || IsApplying)
+                return;
+
+            var previous = Status;
+            const string hidden = "Windows are hidden. Press a key or click to bring them back.";
+            Status = hidden;
+            await _preview.ShowUntilDismissedAsync(cancellation);
+            if (!_shuttingDown && Status == hidden)
+                Status = previous;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (!_shuttingDown)
+                Status = exception.Message;
+        }
+        finally
+        {
+            IsPreviewing = false;
+        }
+    }
+
+    private bool CanPreview() => !IsPreviewing && !IsApplying && !_shuttingDown;
+
+    private async Task WaitUntilAppliedAsync()
+    {
+        while (IsApplying && !_shuttingDown)
+        {
+            var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnFinished(object? sender, EventArgs e)
+            {
+                ApplyFinished -= OnFinished;
+                finished.TrySetResult();
+            }
+
+            ApplyFinished += OnFinished;
+            if (!IsApplying)
+            {
+                ApplyFinished -= OnFinished;
+                break;
+            }
+
+            await finished.Task;
+        }
+    }
 
     private async Task LoadMonitorsAsync(Screens? screens, int generation)
     {
