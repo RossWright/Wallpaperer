@@ -4,3 +4,5 @@ obj/
 *.user
 TestResults/
 dist/
+__pycache__/
+*.pyc
